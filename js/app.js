@@ -52,7 +52,7 @@ function log(t, texto) { t.historico.push({ em: new Date().toISOString(), por: m
 let toastTimer;
 function toast(msg) {
   const el = $('#toast');
-  el.textContent = '> ' + msg;
+  el.textContent = msg;
   el.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), 3800);
@@ -63,20 +63,19 @@ function chrome(route) {
   const sel = $('#who');
   sel.innerHTML = Store.USERS.map((u) => `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.nome)} — ${u.papel === 'financeiro' ? 'financeiro' : 'técnico'}</option>`).join('');
   const fila = trips.filter((t) => ['enviada', 'conferida'].includes(t.status)).length;
-  const items = [['#/', 'painel', '01'], ['#/nova', 'nova viagem', '02']];
-  if (isFin()) items.push(['#/fila', 'fila' + (fila ? `<span class="badge">${fila}</span>` : ''), '03']);
-  items.push(['#/relatorio', 'relatório', isFin() ? '04' : '03']);
-  $('#nav').innerHTML = items.map(([h, l, n]) => `<a href="${h}" class="${route === h ? 'on' : ''}">[${n}] ${l}</a>`).join('');
+  const items = [['#/', 'Painel'], ['#/nova', 'Nova viagem']];
+  if (isFin()) items.push(['#/fila', 'Fila' + (fila ? `<span class="badge">${fila}</span>` : '')]);
+  items.push(['#/relatorio', 'Relatório']);
+  $('#nav').innerHTML = items.map(([h, l]) => `<a href="${h}" class="${route === h ? 'on' : ''}"${route === h ? ' aria-current="page"' : ''}>${l}</a>`).join('');
 }
 
 /* ---------- views ---------- */
 function tripCard(t) {
   const x = totals(t);
-  const hot = t.status === 'enviada' && isFin();
-  return `<a class="card" href="#/viagem/${t.id}">
-    <span class="tag ${t.status === 'encerrada' ? 'done' : hot ? 'hot' : ''}">${STATUS[t.status]}</span>
+    return `<a class="card" href="#/viagem/${t.id}">
+    <span class="tag s-${t.status}">${STATUS[t.status]}</span>
     <h3>${esc(t.cidades.join(' · '))}</h3>
-    <div class="who2">// ${esc(userName(t.tecnicoId))}</div>
+    <div class="who2">${esc(userName(t.tecnicoId))}</div>
     <div class="meta">${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}</div>
     <div class="val"><span>gasto ${brl(x.G)}</span><span class="${x.saldo < 0 ? 'blue' : ''}">${x.A || x.G ? esc(saldoTxt(x.saldo)) : '—'}</span></div>
   </a>`;
@@ -88,19 +87,19 @@ function vPainel() {
   const conferir = list.filter((t) => ['enviada', 'conferida'].includes(t.status)).length;
   const gasto = list.reduce((s, t) => s + totals(t).G, 0);
   return `<div class="view">
-    <div class="head"><span class="sec-n">[01]</span>
-      <h1>${isFin() ? 'Todas as <em>viagens</em>' : 'Minhas <em>viagens</em>'}</h1>
+    <div class="head">
+      <h1>${isFin() ? 'Todas as viagens' : 'Minhas viagens'}</h1>
       <p>${isFin() ? 'Confira o que a equipe lançou, aprove e registre o acerto.' : 'Registre cada gasto com a nota, assine e envie ao financeiro.'}</p></div>
-    <div class="panel ink"><div class="grid">
+    <div class="panel summary"><div class="grid">
       <div class="stat"><div class="l">viagens</div><div class="n">${list.length}</div></div>
       <div class="stat"><div class="l">em andamento</div><div class="n">${andamento}</div></div>
       <div class="stat"><div class="l">${isFin() ? 'para conferir / acertar' : 'com o financeiro'}</div><div class="n">${conferir}</div></div>
       <div class="stat"><div class="l">total gasto</div><div class="n">${brl(gasto)}</div></div>
     </div></div>
     ${list.length ? `<div class="cards">${list.map(tripCard).join('')}</div>` : `
-      <div class="empty"><p>// nenhuma viagem ainda_</p>
-        <div class="row" style="justify-content:center"><a class="btn primary" href="#/nova">[ nova viagem ]</a>
-        <button data-act="demo">[ carregar exemplo ]</button></div></div>`}
+      <div class="empty"><p>Nenhuma viagem cadastrada.</p>
+        <div class="row" style="justify-content:center"><a class="btn primary" href="#/nova">Nova viagem</a>
+        <button data-act="demo">Carregar exemplo</button></div></div>`}
   </div>`;
 }
 
@@ -111,7 +110,7 @@ function advFields(v = {}) {
 
 function vNova() {
   return `<div class="view">
-    <div class="head"><span class="sec-n">[02]</span><h1>Nova <em>viagem</em></h1>
+    <div class="head"><h1>Nova viagem</h1>
       <p>Informe quem vai, para onde e se o financeiro passou algum dinheiro.</p></div>
     <form class="panel" data-form="nova" autocomplete="off">
       <div class="grid">
@@ -127,12 +126,12 @@ function vNova() {
       </div>
       <div class="fld"><label class="f" for="fin">finalidade</label><input id="fin" name="finalidade" placeholder="ex.: manutenção de equipamento (opcional)"></div>
       <hr class="rule">
-      <div class="fld"><span class="f mono" style="display:block;margin-bottom:6px">o financeiro passou dinheiro?</span>
-        <div class="seg"><label><input type="radio" name="adv" value="nao" checked><span>[ não ]</span></label>
-        <label><input type="radio" name="adv" value="sim"><span>[ sim ]</span></label></div>
-        <div class="hint">// sem adiantamento = você paga do bolso e pede reembolso depois</div></div>
-      <div id="advbox" hidden>${advFields()}<div class="hint">// separe por finalidade: abastecimento, hospedagem, alimentação</div></div>
-      <div class="row" style="margin-top:18px"><button class="primary" type="submit">[ criar viagem ]</button><a class="btn" href="#/">[ cancelar ]</a></div>
+      <div class="fld"><span class="f" style="display:block;margin-bottom:6px">o financeiro passou dinheiro?</span>
+        <div class="seg"><label><input type="radio" name="adv" value="nao" checked><span>Não</span></label>
+        <label><input type="radio" name="adv" value="sim"><span>Sim</span></label></div>
+        <div class="hint">Sem adiantamento: você paga do bolso e pede reembolso depois.</div></div>
+      <div id="advbox" hidden>${advFields()}<div class="hint">Separe por finalidade: abastecimento, hospedagem, alimentação.</div></div>
+      <div class="row" style="margin-top:18px"><button class="primary" type="submit">Criar viagem</button><a class="btn" href="#/">Cancelar</a></div>
     </form></div>`;
 }
 
@@ -141,12 +140,12 @@ function vFila() {
   const a = trips.filter((t) => t.status === 'enviada').sort(byNew);
   const b = trips.filter((t) => t.status === 'conferida').sort(byNew);
   return `<div class="view">
-    <div class="head"><span class="sec-n">[03]</span><h1>Fila do <em>financeiro</em></h1>
+    <div class="head"><h1>Fila do financeiro</h1>
       <p>O que está esperando conferência ou acerto de reembolso/devolução.</p></div>
-    <h3 style="margin-bottom:16px">// para conferir (${a.length})</h3>
-    ${a.length ? `<div class="cards">${a.map(tripCard).join('')}</div>` : '<div class="empty"><p>// nada para conferir_</p></div>'}
-    <h3 style="margin-bottom:16px">// aguardando acerto (${b.length})</h3>
-    ${b.length ? `<div class="cards">${b.map(tripCard).join('')}</div>` : '<div class="empty"><p>// nenhum acerto pendente_</p></div>'}
+    <h3 style="margin-bottom:16px">Para conferir (${a.length})</h3>
+    ${a.length ? `<div class="cards">${a.map(tripCard).join('')}</div>` : '<div class="empty"><p>Nada para conferir.</p></div>'}
+    <h3 style="margin-bottom:16px">Aguardando acerto (${b.length})</h3>
+    ${b.length ? `<div class="cards">${b.map(tripCard).join('')}</div>` : '<div class="empty"><p>Nenhum acerto pendente.</p></div>'}
   </div>`;
 }
 
@@ -157,11 +156,10 @@ function vRelatorio() {
   const devol = r2(pend.reduce((s, t) => s + Math.max(0, totals(t).saldo), 0));
   const gCat = {}; CATS.forEach(([k]) => { gCat[k] = 0; });
   list.forEach((t) => { const x = totals(t); CATS.forEach(([k]) => { gCat[k] = r2(gCat[k] + x.gasto[k]); }); });
-  const num = isFin() ? '04' : '03';
   return `<div class="view">
-    <div class="head"><span class="sec-n">[${num}]</span><h1><em>Relatório</em> de despesas</h1>
+    <div class="head"><h1>Relatório de despesas</h1>
       <p>${isFin() ? 'Visão geral da equipe.' : 'Suas viagens e gastos.'}</p></div>
-    <div class="panel ink"><div class="grid">
+    <div class="panel summary"><div class="grid">
       <div class="stat"><div class="l">gasto total</div><div class="n">${brl(list.reduce((s, t) => s + totals(t).G, 0))}</div></div>
       <div class="stat"><div class="l">a reembolsar (em aberto)</div><div class="n">${brl(reemb)}</div></div>
       <div class="stat"><div class="l">a devolver (em aberto)</div><div class="n">${brl(devol)}</div></div>
@@ -171,15 +169,15 @@ function vRelatorio() {
       <tbody>${CATS.map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(gCat[k])}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="panel"><h3>Viagens</h3>${list.length ? `<div class="tw"><table>
       <thead><tr><th>data</th><th>técnico</th><th>cidades</th><th>status</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">saldo</th></tr></thead>
-      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${brl(x.saldo)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted mono">// sem viagens</p>'}
-      <div class="row noprint" style="margin-top:16px"><button onclick="window.print()">[ imprimir / salvar PDF ]</button></div></div>
+      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${brl(x.saldo)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma viagem.</p>'}
+      <div class="row noprint" style="margin-top:16px"><button onclick="window.print()">Imprimir / salvar PDF</button></div></div>
   </div>`;
 }
 
 function vViagem(id) {
   const t = trips.find((x) => x.id === id);
   if (!t || (!isFin() && t.tecnicoId !== userId)) {
-    return `<div class="view"><a class="back" href="#/">← voltar</a><div class="empty"><p>// viagem não encontrada_</p></div></div>`;
+    return `<div class="view"><a class="back" href="#/">← voltar</a><div class="empty"><p>Viagem não encontrada.</p></div></div>`;
   }
   const x = totals(t);
   const owner = t.tecnicoId === userId;
@@ -189,7 +187,7 @@ function vViagem(id) {
   const canClose = owner && open && (t.despesas.length > 0 || x.A > 0);
   const label = x.saldo > 0 ? 'o técnico devolve' : x.saldo < 0 ? 'a empresa reembolsa' : 'contas zeradas';
 
-  const resumo = `<div class="panel ink">
+  const resumo = `<div class="panel summary">
     <div class="grid">
       <div class="stat"><div class="l">adiantado</div><div class="n">${brl(x.A)}</div></div>
       <div class="stat"><div class="l">gasto</div><div class="n">${brl(x.G)}</div></div>
@@ -197,22 +195,22 @@ function vViagem(id) {
     </div>
     <hr class="rule" style="border-top-width:1.5px">
     <div class="tw"><table><thead><tr><th>categoria</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">diferença</th></tr></thead>
-    <tbody>${CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(x.adiant[k])}</td><td class="r">${brl(x.gasto[k])}</td><td class="r">${brl(x.adiant[k] - x.gasto[k])}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">// nada lançado ainda</td></tr>'}</tbody></table></div>
+    <tbody>${CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(x.adiant[k])}</td><td class="r">${brl(x.gasto[k])}</td><td class="r">${brl(x.adiant[k] - x.gasto[k])}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nada lançado ainda.</td></tr>'}</tbody></table></div>
   </div>`;
 
   const adv = canAdv ? `<form class="panel" data-form="adiant" data-id="${t.id}">
     <h3>Adiantamento</h3>
     <p class="muted" style="margin-top:0">${isFin() ? 'Quanto foi liberado, por finalidade.' : 'Quanto o financeiro passou para esta viagem (deixe em branco se nada).'}</p>
-    ${advFields(t.adiantamento)}<button type="submit">[ salvar adiantamento ]</button></form>` : '';
+    ${advFields(t.adiantamento)}<button type="submit">Salvar adiantamento</button></form>` : '';
 
   const despesas = `<div class="panel"><h3>Despesas</h3>
     ${t.despesas.length ? `<div class="tw"><table>
       <thead><tr><th>data</th><th>categoria</th><th>descrição</th><th class="r">valor</th><th>nota</th>${canDesp ? '<th></th>' : ''}</tr></thead>
       <tbody>${t.despesas.map((d) => `<tr><td>${dt(d.data)}</td><td>${catName(d.categoria)}</td><td>${esc(d.obs)}</td><td class="r">${brl(d.valor)}</td>
-        <td>${d.arquivoId ? `<button data-act="ver" data-file="${esc(d.arquivoId)}">[ ver ]</button>` : '<span class="muted mono">—</span>'}</td>
-        ${canDesp ? `<td><button class="danger" data-act="del-desp" data-id="${t.id}" data-d="${d.id}" aria-label="remover despesa">[ x ]</button></td>` : ''}</tr>`).join('')}</tbody>
+        <td>${d.arquivoId ? `<button data-act="ver" data-file="${esc(d.arquivoId)}">Ver</button>` : '<span class="muted">—</span>'}</td>
+        ${canDesp ? `<td><button class="danger" data-act="del-desp" data-id="${t.id}" data-d="${d.id}" aria-label="Remover despesa">Remover</button></td>` : ''}</tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="3">total</td><td class="r">${brl(x.G)}</td><td></td>${canDesp ? '<td></td>' : ''}</tr></tfoot></table></div>`
-      : '<p class="muted mono">// nenhuma despesa lançada_</p>'}
+      : '<p class="muted">Nenhuma despesa lançada.</p>'}
     ${canDesp ? `<hr class="rule"><form data-form="desp" data-id="${t.id}">
       <h3 style="font-size:18px">Adicionar despesa</h3>
       <div class="grid">
@@ -222,40 +220,40 @@ function vViagem(id) {
       </div>
       <div class="fld"><label class="f" for="d-obs">descrição</label><input id="d-obs" name="obs" placeholder="ex.: almoço (opcional)"></div>
       <div class="fld"><label class="f" for="d-arq">foto ou PDF da nota</label><input id="d-arq" name="arquivo" type="file" accept="image/*,application/pdf" required>
-        <div class="hint">// foto da nota fiscal ou do cupom</div></div>
-      <button class="primary" type="submit">[ registrar despesa ]</button></form>` : ''}</div>`;
+        <div class="hint">Foto da nota fiscal ou do cupom.</div></div>
+      <button class="primary" type="submit">Registrar despesa</button></form>` : ''}</div>`;
 
   let acao = '';
-  if (t.status === 'correcao' && t.correcao) acao += `<div class="alert"><b class="mono">// correção pedida:</b> ${esc(t.correcao)}</div>`;
+  if (t.status === 'correcao' && t.correcao) acao += `<div class="alert"><b>Correção pedida:</b> ${esc(t.correcao)}</div>`;
   if (canClose) acao += `<form class="panel" data-form="assinar" data-id="${t.id}">
       <h3>Fechar e assinar</h3>
       <p class="muted" style="margin-top:0">Ao assinar, a prestação vai para o financeiro e você não edita mais até ele conferir.</p>
       <div class="fld"><label class="chk"><input type="checkbox" name="ok" required> <span>Declaro que os valores e as notas lançados são verdadeiros e foram gastos a serviço desta viagem.</span></label></div>
       <div class="fld"><label class="f" for="ass">digite seu nome para assinar</label><input id="ass" name="nome" required placeholder="${esc(me().nome)}"></div>
-      <button class="primary" type="submit">[ assinar e enviar ]</button></form>`;
-  if (t.assinatura) acao += `<div class="alert"><span class="mono">✦ assinado eletronicamente por <b>${esc(t.assinatura.nome)}</b> em ${dtt(t.assinatura.em)}</span></div>`;
+      <button class="primary" type="submit">Assinar e enviar</button></form>`;
+  if (t.assinatura) acao += `<div class="alert"><span>Assinado eletronicamente por <b>${esc(t.assinatura.nome)}</b> em ${dtt(t.assinatura.em)}</span></div>`;
   if (isFin() && t.status === 'enviada') acao += `<div class="panel"><h3>Conferência</h3>
-      <div class="row"><button class="primary" data-act="aprovar" data-id="${t.id}">[ aprovar prestação ]</button></div>
+      <div class="row"><button class="primary" data-act="aprovar" data-id="${t.id}">Aprovar prestação</button></div>
       <hr class="rule"><form data-form="correcao" data-id="${t.id}">
       <div class="fld"><label class="f" for="mot">ou peça correção ao técnico</label><textarea id="mot" name="motivo" required placeholder="o que precisa ser ajustado?"></textarea></div>
-      <button type="submit">[ pedir correção ]</button></form></div>`;
+      <button type="submit">Pedir correção</button></form></div>`;
   if (isFin() && t.status === 'conferida') acao += `<form class="panel" data-form="acerto" data-id="${t.id}">
       <h3>Acerto</h3>
       <p style="margin-top:0">${x.saldo < 0 ? `Reembolsar <b>${brl(-x.saldo)}</b> para ${esc(userName(t.tecnicoId))}.` : `${esc(userName(t.tecnicoId))} devolve <b>${brl(x.saldo)}</b>.`}</p>
       <div class="fld"><label class="f" for="ac-obs">observação</label><input id="ac-obs" name="obs" placeholder="ex.: pix enviado (opcional)"></div>
-      <button class="primary" type="submit">[ ${x.saldo < 0 ? 'registrar reembolso pago' : 'registrar devolução recebida'} ]</button></form>`;
-  if (t.status === 'conferida' && !isFin()) acao += `<div class="alert mono">// aprovada · aguardando o acerto de ${x.saldo < 0 ? 'reembolso' : 'devolução'} de ${brl(Math.abs(x.saldo))}</div>`;
-  if (t.status === 'enviada' && !isFin()) acao += `<div class="alert mono">// enviada ao financeiro · aguardando conferência</div>`;
-  if (t.status === 'encerrada') acao += `<div class="alert mono">// viagem encerrada${t.acerto ? ` · ${t.acerto.tipo === 'reembolso' ? 'reembolso pago' : 'devolução recebida'}: ${brl(t.acerto.valor)} (${dtt(t.acerto.em)})` : ''}</div>`;
+      <button class="primary" type="submit">${x.saldo < 0 ? 'Registrar reembolso pago' : 'Registrar devolução recebida'}</button></form>`;
+  if (t.status === 'conferida' && !isFin()) acao += `<div class="alert">Aprovada. Aguardando o acerto de ${x.saldo < 0 ? 'reembolso' : 'devolução'} de ${brl(Math.abs(x.saldo))}</div>`;
+  if (t.status === 'enviada' && !isFin()) acao += `<div class="alert">Enviada ao financeiro. Aguardando conferência.</div>`;
+  if (t.status === 'encerrada') acao += `<div class="alert">Viagem encerrada${t.acerto ? ` · ${t.acerto.tipo === 'reembolso' ? 'reembolso pago' : 'devolução recebida'}: ${brl(t.acerto.valor)} (${dtt(t.acerto.em)})` : ''}</div>`;
 
   return `<div class="view">
     <a class="back" href="#/">← voltar</a>
-    <div class="head"><span class="tag ${t.status === 'encerrada' ? 'done' : ''}">${STATUS[t.status]}</span>
-      <h1 style="margin-top:12px">Viagem de <em>${esc(userName(t.tecnicoId))}</em></h1>
-      <p class="mono">${esc(t.cidades.join(' · '))} // ${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}${t.finalidade ? ' // ' + esc(t.finalidade) : ''}</p></div>
+    <div class="head"><span class="tag s-${t.status}">${STATUS[t.status]}</span>
+      <h1 style="margin-top:12px">Viagem de ${esc(userName(t.tecnicoId))}</h1>
+      <p class="sub">${esc(t.cidades.join(' · '))} · ${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}${t.finalidade ? ' · ' + esc(t.finalidade) : ''}</p></div>
     ${acao}${resumo}${adv}${despesas}
     <div class="panel"><h3>Histórico</h3><ul class="hist">${t.historico.slice().reverse().map((h) => `<li><span class="t">${dtt(h.em)} · ${esc(h.por)}</span>${esc(h.texto)}</li>`).join('')}</ul>
-      ${owner && t.status === 'em_viagem' ? `<div class="row" style="margin-top:14px"><button class="danger" data-act="excluir" data-id="${t.id}">[ excluir viagem ]</button></div>` : ''}</div>
+      ${owner && t.status === 'em_viagem' ? `<div class="row" style="margin-top:14px"><button class="danger" data-act="excluir" data-id="${t.id}">Excluir viagem</button></div>` : ''}</div>
   </div>`;
 }
 
