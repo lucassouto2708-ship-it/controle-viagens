@@ -138,6 +138,10 @@ tfoot td{border-bottom:0;font-weight:600;background:var(--subtle)}
 
 @media (min-width:900px){
   .panel{padding:var(--s5)}
+  form.panel{max-width:760px}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--s3)}
+  .card{padding:var(--s3) var(--s4)}
+  .card .val{margin-top:var(--s2);padding-top:var(--s2)}
 }
 @media (max-width:640px){
   h1{font-size:22px}
