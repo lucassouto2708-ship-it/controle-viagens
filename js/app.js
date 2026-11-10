@@ -2,9 +2,10 @@
 'use strict';
 
 // Escolhe a camada de dados: Supabase (js/config.js preenchido) ou demo local.
-const Store = (window.CV_CONFIG && window.CV_CONFIG.url) ? window.SupabaseStore : window.LocalStore;
+const useFirebase = !!(window.CV_CONFIG && window.CV_CONFIG.firebase && window.CV_CONFIG.firebase.apiKey);
+const Store = useFirebase ? window.FirebaseStore : window.LocalStore;
 if (!Store) {
-  document.getElementById('app').innerHTML = '<div class="alert">Não foi possível carregar o Supabase. Verifique a conexão e recarregue a página.</div>';
+  document.getElementById('app').innerHTML = '<div class="alert">Não foi possível carregar o Firebase. Verifique a conexão e recarregue a página.</div>';
   return;
 }
 
@@ -71,7 +72,7 @@ function chrome(route) {
   $('.who').hidden = !userId;
   $('.foot').textContent = Store.demo
     ? 'Protótipo: os dados ficam salvos apenas neste navegador.'
-    : 'Dados salvos com segurança no Supabase.';
+    : 'Dados salvos com segurança na nuvem (Firebase).';
   if (!userId) { $('#nav').innerHTML = ''; return; }
   $('.who-demo').hidden = !Store.demo; $('#whoami').hidden = Store.demo; $('#logout').hidden = Store.demo;
   if (!Store.demo) $('#whoami').textContent = `${me().nome} · ${me().papel === 'financeiro' ? 'financeiro' : 'técnico'}`;
@@ -307,15 +308,22 @@ async function mutate(id, fn, msg) {
   await refresh(msg);
 }
 
+// Reduz fotos até caberem no limite do store (demo: 3 MB; Firebase: 700 KB).
+const maxFile = () => Store.maxFile || 3 * 1024 * 1024;
 async function compress(file) {
   if (!file.type.startsWith('image/')) return file;
   try {
     const bmp = await createImageBitmap(file);
-    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    return await new Promise((r) => c.toBlob((b) => r(b || file), 'image/jpeg', 0.72));
+    let out = file;
+    for (const [dim, q] of [[1600, 0.72], [1280, 0.65], [1024, 0.6], [800, 0.55]]) {
+      const k = Math.min(1, dim / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      out = await new Promise((r) => c.toBlob((b) => r(b || file), 'image/jpeg', q));
+      if (out.size <= maxFile()) break;
+    }
+    return out;
   } catch { return file; }
 }
 
@@ -356,7 +364,7 @@ const forms = {
     const v = new FormData(f);
     const file = v.get('arquivo');
     if (!file || !file.size) return toast('anexe a nota');
-    if (!file.type.startsWith('image/') && file.size > 3 * 1024 * 1024) return toast('PDF acima de 3 MB');
+    if (!file.type.startsWith('image/') && file.size > maxFile()) return toast('PDF acima de ' + Math.round(maxFile() / 1024) + ' KB');
     const blob = await compress(file);
     const arquivoId = await Store.putFile(Store.uid(), blob, f.dataset.id);
     await mutate(f.dataset.id, (t) => {

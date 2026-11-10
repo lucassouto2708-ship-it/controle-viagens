@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function perfil() { return get(/databases/$(database)/documents/perfis/$(request.auth.uid)).data; }
+    function ativo() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/perfis/$(request.auth.uid))
+        && perfil().ativo != false;
+    }
+    function fin() { return ativo() && perfil().papel == 'financeiro'; }
+    function aberta(s) { return s in ['em_viagem', 'correcao']; }
+
+    match /perfis/{uid} {
+      allow read: if ativo() && (uid == request.auth.uid || fin());
+      allow write: if fin();
+    }
+
+    match /viagens/{id} {
+      allow read: if ativo() && (resource.data.tecnicoId == request.auth.uid || fin());
+
+      allow create: if ativo()
+        && request.resource.data.status == 'em_viagem'
+        && (request.resource.data.tecnicoId == request.auth.uid || fin());
+
+      // técnico: edita só a própria viagem aberta e pode enviá-la; não mexe em dono nem acerto
+      allow update: if ativo()
+        && resource.data.tecnicoId == request.auth.uid
+        && aberta(resource.data.status)
+        && request.resource.data.tecnicoId == resource.data.tecnicoId
+        && request.resource.data.status in ['em_viagem', 'correcao', 'enviada']
+        && request.resource.data.acerto == resource.data.acerto;
+
+      // financeiro: confere, aprova, acerta; nada muda depois de encerrada
+      allow update: if fin()
+        && resource.data.status != 'encerrada'
+        && request.resource.data.tecnicoId == resource.data.tecnicoId;
+
+      allow delete: if ativo() && (
+        (resource.data.tecnicoId == request.auth.uid && resource.data.status == 'em_viagem')
+        || (fin() && resource.data.status != 'encerrada'));
+
+      match /comprovantes/{fid} {
+        function pai() { return get(/databases/$(database)/documents/viagens/$(id)).data; }
+        allow read: if ativo() && (pai().tecnicoId == request.auth.uid || fin());
+        allow create: if ativo() && pai().tecnicoId == request.auth.uid && aberta(pai().status);
+        allow delete: if ativo() && (
+          (pai().tecnicoId == request.auth.uid && aberta(pai().status))
+          || (fin() && pai().status != 'encerrada'));
+      }
+    }
+  }
+}
