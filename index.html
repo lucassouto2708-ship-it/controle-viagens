@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Controle de Viagens</title>
+<meta name="description" content="Controle de despesas de viagem: adiantamento, comprovantes, assinatura e reembolso.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,400,50;1,9..144,400,50&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="logo" href="#/" data-nav>&gt; controle_viagens<span class="suf">.app</span><span class="cur">_</span></a>
+    <label class="who"><span class="mono muted">// entrar como</span>
+      <select id="who" aria-label="Usuário de demonstração"></select>
+    </label>
+  </div>
+  <nav class="wrap nav" id="nav" aria-label="Seções"></nav>
+</header>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<main class="wrap" id="app"></main>
+<footer class="wrap foot mono muted">// protótipo · dados salvos só neste navegador · login real e banco entram na próxima etapa <span class="star">✦</span></footer>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
