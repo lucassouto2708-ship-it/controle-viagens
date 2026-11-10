@@ -2,7 +2,7 @@
    Hoje: localStorage (viagens) + IndexedDB (comprovantes).
    Depois: trocar o corpo destas funções por chamadas ao Supabase
    (tabelas + Storage) mantendo a mesma interface — o app.js não muda. */
-const Store = (() => {
+window.LocalStore = (() => {
   const KEY = 'controle_viagens.v1';
 
   // Equipe de demonstração. No Supabase vira tabela `perfis` + Auth.
@@ -26,7 +26,7 @@ const Store = (() => {
     r.onerror = () => rej(r.error);
   });
 
-  async function putFile(id, blob) {
+  async function putFile(id, blob, _viagemId) {
     const db = await idb();
     return new Promise((res, rej) => {
       const tx = db.transaction('f', 'readwrite');
@@ -69,5 +69,10 @@ const Store = (() => {
     write(all.filter((x) => x.id !== id));
   }
 
-  return { USERS, uid, list, save, remove, putFile, getFile, delFile };
+  // Modo demonstração: sem login real; o app mostra o seletor "Entrar como".
+  async function init() { return { user: null }; }
+  async function login() {}
+  async function logout() {}
+
+  return { demo: true, USERS, uid, init, login, logout, list, save, remove, putFile, getFile, delFile };
 })();

@@ -14,16 +14,23 @@
 <header class="top">
   <div class="wrap top-in">
     <a class="logo" href="#/" data-nav>Controle de Viagens</a>
-    <label class="who"><span>Entrar como</span>
-      <select id="who" aria-label="Usuário de demonstração"></select>
-    </label>
+    <div class="who" hidden>
+      <label class="who-demo"><span>Entrar como</span>
+        <select id="who" aria-label="Usuário de demonstração"></select>
+      </label>
+      <span id="whoami" hidden></span>
+      <button id="logout" type="button" hidden>Sair</button>
+    </div>
   </div>
   <nav class="wrap nav" id="nav" aria-label="Seções"></nav>
 </header>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <main class="wrap" id="app"></main>
-<footer class="wrap foot">Protótipo: os dados ficam salvos apenas neste navegador. Login e banco de dados entram na próxima etapa.</footer>
+<footer class="wrap foot"></footer>
+<script src="js/config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="js/store.js"></script>
+<script src="js/store-supabase.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

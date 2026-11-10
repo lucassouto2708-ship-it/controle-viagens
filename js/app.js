@@ -1,6 +1,13 @@
 (() => {
 'use strict';
 
+// Escolhe a camada de dados: Supabase (js/config.js preenchido) ou demo local.
+const Store = (window.CV_CONFIG && window.CV_CONFIG.url) ? window.SupabaseStore : window.LocalStore;
+if (!Store) {
+  document.getElementById('app').innerHTML = '<div class="alert">Não foi possível carregar o Supabase. Verifique a conexão e recarregue a página.</div>';
+  return;
+}
+
 /* ---------- helpers ---------- */
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -27,8 +34,8 @@ const STATUS = {
 
 /* ---------- estado ---------- */
 let trips = [];
-let userId = (() => { try { return localStorage.getItem('cv.user'); } catch { return null; } })();
-if (!Store.USERS.some((u) => u.id === userId)) userId = Store.USERS[0].id;
+let userId = null;
+let authMsg = '';
 const me = () => Store.USERS.find((u) => u.id === userId);
 const isFin = () => me().papel === 'financeiro';
 const userName = (id) => (Store.USERS.find((u) => u.id === id) || { nome: id }).nome;
@@ -61,6 +68,13 @@ function toast(msg) {
 /* ---------- chrome (topo + nav) ---------- */
 function chrome(route) {
   const sel = $('#who');
+  $('.who').hidden = !userId;
+  $('.foot').textContent = Store.demo
+    ? 'Protótipo: os dados ficam salvos apenas neste navegador.'
+    : 'Dados salvos com segurança no Supabase.';
+  if (!userId) { $('#nav').innerHTML = ''; return; }
+  $('.who-demo').hidden = !Store.demo; $('#whoami').hidden = Store.demo; $('#logout').hidden = Store.demo;
+  if (!Store.demo) $('#whoami').textContent = `${me().nome} · ${me().papel === 'financeiro' ? 'financeiro' : 'técnico'}`;
   sel.innerHTML = Store.USERS.map((u) => `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.nome)} — ${u.papel === 'financeiro' ? 'financeiro' : 'técnico'}</option>`).join('');
   const fila = trips.filter((t) => ['enviada', 'conferida'].includes(t.status)).length;
   const items = [['#/', 'Painel'], ['#/nova', 'Nova viagem']];
@@ -99,7 +113,7 @@ function vPainel() {
     ${list.length ? `<div class="cards">${list.map(tripCard).join('')}</div>` : `
       <div class="empty"><p>Nenhuma viagem cadastrada.</p>
         <div class="row" style="justify-content:center"><a class="btn primary" href="#/nova">Nova viagem</a>
-        <button data-act="demo">Carregar exemplo</button></div></div>`}
+        ${Store.demo ? '<button data-act="demo">Carregar exemplo</button>' : ''}</div></div>`}
   </div>`;
 }
 
@@ -258,7 +272,19 @@ function vViagem(id) {
 }
 
 /* ---------- roteador ---------- */
+function vLogin() {
+  return `<div class="view">
+    <div class="head"><h1>Entrar</h1><p>Acesse com o e-mail e a senha cadastrados pelo financeiro.</p></div>
+    <form class="panel" data-form="login" style="max-width:420px">
+      ${authMsg ? `<div class="alert" role="alert">${esc(authMsg)}</div>` : ''}
+      <div class="fld"><label class="f" for="lg-email">e-mail</label><input id="lg-email" name="email" type="email" autocomplete="username" required></div>
+      <div class="fld"><label class="f" for="lg-senha">senha</label><input id="lg-senha" name="senha" type="password" autocomplete="current-password" required></div>
+      <button class="primary" type="submit">Entrar</button>
+    </form></div>`;
+}
+
 function route() {
+  if (!userId) { chrome(''); $('#app').innerHTML = vLogin(); return; }
   const h = location.hash || '#/';
   let html; let key = h;
   if (h.startsWith('#/viagem/')) { html = vViagem(h.slice(9)); key = ''; }
@@ -294,6 +320,13 @@ async function compress(file) {
 }
 
 const forms = {
+  async login(f) {
+    const v = new FormData(f);
+    try { await Store.login(String(v.get('email')).trim(), String(v.get('senha'))); }
+    catch (err) { authMsg = 'E-mail ou senha incorretos.'; return route(); }
+    authMsg = '';
+    await boot();
+  },
   async nova(f) {
     const v = new FormData(f);
     if (v.get('volta') < v.get('ida')) return toast('a volta não pode ser antes da ida');
@@ -325,8 +358,7 @@ const forms = {
     if (!file || !file.size) return toast('anexe a nota');
     if (!file.type.startsWith('image/') && file.size > 3 * 1024 * 1024) return toast('PDF acima de 3 MB');
     const blob = await compress(file);
-    const arquivoId = Store.uid();
-    await Store.putFile(arquivoId, blob);
+    const arquivoId = await Store.putFile(Store.uid(), blob, f.dataset.id);
     await mutate(f.dataset.id, (t) => {
       const d = { id: Store.uid(), data: v.get('data'), categoria: v.get('categoria'), valor: r2(v.get('valor')), obs: String(v.get('obs') || '').trim(), arquivoId, arquivoNome: file.name };
       t.despesas.push(d);
@@ -434,5 +466,33 @@ $('#who').addEventListener('change', (e) => {
 });
 window.addEventListener('hashchange', () => { route(); window.scrollTo(0, 0); });
 
-load().then(route);
+$('#logout').addEventListener('click', async () => {
+  await Store.logout();
+  userId = null; trips = []; authMsg = '';
+  location.hash = '#/';
+  route();
+});
+
+async function boot() {
+  try {
+    const s = await Store.init();
+    if (Store.demo) {
+      let id = null;
+      try { id = localStorage.getItem('cv.user'); } catch { /* ok */ }
+      userId = Store.USERS.some((u) => u.id === id) ? id : Store.USERS[0].id;
+    } else if (s.user) {
+      userId = s.user.id;
+    } else {
+      userId = null;
+      if (s.semPerfil) { authMsg = 'Seu usuário ainda não tem perfil. Peça ao financeiro para liberar o acesso.'; await Store.logout(); }
+    }
+    if (userId) await load();
+  } catch (err) {
+    console.error(err);
+    userId = null;
+    authMsg = 'Erro ao conectar: ' + err.message;
+  }
+  route();
+}
+boot();
 })();
