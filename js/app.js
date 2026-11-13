@@ -171,8 +171,77 @@ function vFila() {
   </div>`;
 }
 
+/* ---------- períodos (semana / quinzena / mês) ---------- */
+const rel = { tipo: 'mes', ref: today(), de: '', ate: '', tec: '', ordem: 'data' };
+const pd = (s) => { const [y, m, d] = s.split('-').map(Number); return { y, m, d }; };
+const fd = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10); // normaliza dia/mês fora da faixa
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function periodo() {
+  const { y, m, d } = pd(rel.ref || today());
+  if (rel.tipo === 'semana') {
+    const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // segunda = 0
+    const de = fd(y, m, d - dow); const ate = fd(y, m, d - dow + 6);
+    return { de, ate, nome: `semana de ${dt(de)} a ${dt(ate)}`, arq: `semana-${de}` };
+  }
+  if (rel.tipo === 'quinzena') {
+    const p = d <= 15;
+    const de = fd(y, m, p ? 1 : 16); const ate = p ? fd(y, m, 15) : fd(y, m + 1, 0);
+    return { de, ate, nome: `${p ? '1ª' : '2ª'} quinzena de ${MESES[m - 1]} de ${y} (${dt(de)} a ${dt(ate)})`, arq: `quinzena-${y}-${String(m).padStart(2, '0')}-${p ? 1 : 2}` };
+  }
+  if (rel.tipo === 'mes') {
+    const de = fd(y, m, 1); const ate = fd(y, m + 1, 0);
+    return { de, ate, nome: `${MESES[m - 1]} de ${y}`, arq: `mes-${y}-${String(m).padStart(2, '0')}` };
+  }
+  if (rel.tipo === 'custom') {
+    const de = rel.de || '0000-01-01'; const ate = rel.ate || '9999-12-31';
+    return { de, ate, nome: `${rel.de ? 'de ' + dt(rel.de) : 'desde o início'}${rel.ate ? ' até ' + dt(rel.ate) : ''}`, arq: `periodo-${rel.de || 'inicio'}-${rel.ate || 'hoje'}` };
+  }
+  return { de: '0000-01-01', ate: '9999-12-31', nome: 'todo o período', arq: 'todas' };
+}
+function stepPeriodo(dir) {
+  const { y, m, d } = pd(rel.ref || today());
+  if (rel.tipo === 'semana') rel.ref = fd(y, m, d + 7 * dir);
+  else if (rel.tipo === 'mes') rel.ref = fd(y, m + dir, 1);
+  else if (rel.tipo === 'quinzena') {
+    const p = d <= 15;
+    rel.ref = dir > 0 ? (p ? fd(y, m, 16) : fd(y, m + 1, 1)) : (p ? fd(y, m - 1, 16) : fd(y, m, 1));
+  }
+}
+function relList() {
+  const { de, ate } = periodo();
+  let l = visible().filter((t) => t.ida >= de && t.ida <= ate);
+  if (isFin() && rel.tec) l = l.filter((t) => t.tecnicoId === rel.tec);
+  return l.sort(byNew);
+}
+const ordenar = (l) => l.slice().sort((a, b) => (rel.ordem === 'tecnico' ? userName(a.tecnicoId).localeCompare(userName(b.tecnicoId)) : 0) || a.ida.localeCompare(b.ida) || (a.criadoEm || '').localeCompare(b.criadoEm || ''));
+
+const pdfCtx = () => ({ brl, dt, dtt, userName, catName, totals, CATS, STATUS, getFile: (p) => Store.getFile(p) });
+function baixar(bytes, nome) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function vRelatorio() {
-  const list = visible().slice().sort(byNew);
+  const per = periodo();
+  const list = relList();
+  const enc = list.filter((t) => t.status === 'encerrada');
+  const seg = rel.tipo !== 'todas' && rel.tipo !== 'custom';
+  const ctrl = `<div class="panel noprint"><h3>Período</h3>
+    <div class="grid">
+      <div class="fld"><label class="f" for="r-tipo">agrupar por</label><select id="r-tipo" data-rel="tipo">${[['semana', 'semana'], ['quinzena', 'quinzena'], ['mes', 'mês'], ['custom', 'datas livres'], ['todas', 'tudo']].map(([k, n]) => `<option value="${k}"${rel.tipo === k ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+      ${seg ? `<div class="fld"><label class="f" for="r-ref">dia de referência</label><input id="r-ref" type="date" data-rel="ref" value="${esc(rel.ref)}"></div>` : ''}
+      ${rel.tipo === 'custom' ? `<div class="fld"><label class="f" for="r-de">de</label><input id="r-de" type="date" data-rel="de" value="${esc(rel.de)}"></div>
+        <div class="fld"><label class="f" for="r-ate">até</label><input id="r-ate" type="date" data-rel="ate" value="${esc(rel.ate)}"></div>` : ''}
+      ${isFin() ? `<div class="fld"><label class="f" for="r-tec">técnico</label><select id="r-tec" data-rel="tec"><option value="">todos</option>${Store.USERS.filter((u) => trips.some((t) => t.tecnicoId === u.id)).sort((a, b) => a.nome.localeCompare(b.nome)).map((u) => `<option value="${u.id}"${rel.tec === u.id ? ' selected' : ''}>${esc(u.nome)}</option>`).join('')}</select></div>` : ''}
+      <div class="fld"><label class="f" for="r-ord">ordem no PDF</label><select id="r-ord" data-rel="ordem"><option value="data"${rel.ordem === 'data' ? ' selected' : ''}>por data</option><option value="tecnico"${rel.ordem === 'tecnico' ? ' selected' : ''}>por técnico</option></select></div>
+    </div>
+    <p style="margin:0 0 12px"><b>${esc(per.nome)}</b> <span class="muted">· pela data de ida da viagem</span></p>
+    <div class="row">
+      ${seg ? '<button data-act="rel-prev">← anterior</button><button data-act="rel-next">próximo →</button>' : ''}
+      <button class="primary" data-act="pdf-periodo"${enc.length ? '' : ' disabled'}>Gerar PDF do período (${enc.length} encerrada${enc.length === 1 ? '' : 's'})</button>
+    </div>
+    <div class="hint">O PDF traz o fechamento do período, o resumo de cada viagem e a nota fiscal de cada despesa. Só entram viagens encerradas${list.length - enc.length ? ` (${list.length - enc.length} ainda em andamento no período ficam de fora)` : ''}.</div></div>`;
   const pend = list.filter((t) => ['enviada', 'conferida', 'em_viagem', 'correcao'].includes(t.status));
   const reemb = r2(pend.reduce((s, t) => s + Math.max(0, -totals(t).saldo), 0));
   const devol = r2(pend.reduce((s, t) => s + Math.max(0, totals(t).saldo), 0));
@@ -181,6 +250,7 @@ function vRelatorio() {
   return `<div class="view">
     <div class="head"><h1>Relatório de despesas</h1>
       <p>${isFin() ? 'Visão geral da equipe.' : 'Suas viagens e gastos.'}</p></div>
+    ${ctrl}
     <div class="panel summary"><div class="grid">
       <div class="stat"><div class="l">gasto total</div><div class="n">${brl(list.reduce((s, t) => s + totals(t).G, 0))}</div></div>
       <div class="stat"><div class="l">a reembolsar (em aberto)</div><div class="n">${brl(reemb)}</div></div>
@@ -190,8 +260,8 @@ function vRelatorio() {
       <thead><tr><th>categoria</th><th class="r">gasto</th></tr></thead>
       <tbody>${CATS.map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(gCat[k])}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="panel"><h3>Viagens</h3>${list.length ? `<div class="tw"><table>
-      <thead><tr><th>data</th><th>técnico</th><th>cidades</th><th>status</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">saldo</th></tr></thead>
-      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${brl(x.saldo)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma viagem.</p>'}
+      <thead><tr><th>data</th><th>técnico</th><th>cidades</th><th>status</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">saldo</th><th class="noprint"></th></tr></thead>
+      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${brl(x.saldo)}</td><td class="noprint">${t.status === 'encerrada' ? `<button data-act="pdf-viagem" data-id="${t.id}">PDF</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma viagem neste período.</p>'}
       <div class="row noprint" style="margin-top:16px"><button onclick="window.print()">Imprimir / salvar PDF</button></div></div>
   </div>`;
 }
@@ -272,7 +342,8 @@ function vViagem(id) {
     <a class="back" href="#/">← voltar</a>
     <div class="head"><span class="tag s-${t.status}">${STATUS[t.status]}</span>
       <h1 style="margin-top:12px">Viagem de ${esc(userName(t.tecnicoId))}</h1>
-      <p class="sub">${esc(t.cidades.join(' · '))} · ${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}${t.finalidade ? ' · ' + esc(t.finalidade) : ''}</p></div>
+      <p class="sub">${esc(t.cidades.join(' · '))} · ${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}${t.finalidade ? ' · ' + esc(t.finalidade) : ''}</p>
+      ${t.status === 'encerrada' ? `<div class="row noprint" style="margin-top:12px"><button class="primary" data-act="pdf-viagem" data-id="${t.id}">Baixar PDF com as notas</button></div>` : ''}</div>
     ${acao}${resumo}${adv}${despesas}
     <div class="panel"><h3>Histórico</h3><ul class="hist">${t.historico.slice().reverse().map((h) => `<li><span class="t">${dtt(h.em)} · ${esc(h.por)}</span>${esc(h.texto)}</li>`).join('')}</ul>
       ${owner && t.status === 'em_viagem' ? `<div class="row" style="margin-top:14px"><button class="danger" data-act="excluir" data-id="${t.id}">Excluir viagem</button></div>` : ''}</div>
@@ -463,7 +534,30 @@ const forms = {
   },
 };
 
+async function gerarPdf(el, trs, opts, nome) {
+  if (!window.CVPdf) return toast('Gerador de PDF não carregou. Recarregue a página.');
+  const rot = el.textContent; el.disabled = true; el.textContent = 'Gerando PDF…';
+  toast('Gerando PDF, buscando as notas…');
+  try { baixar(await window.CVPdf.build(trs, pdfCtx(), opts), nome); toast('PDF gerado'); }
+  finally { el.disabled = false; el.textContent = rot; }
+}
+
 const acts = {
+  'rel-prev'() { stepPeriodo(-1); route(); },
+  'rel-next'() { stepPeriodo(1); route(); },
+  async 'pdf-viagem'(el) {
+    const t = trips.find((x) => x.id === el.dataset.id);
+    if (!t) return;
+    const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    await gerarPdf(el, [t], { titulo: `Viagem de ${userName(t.tecnicoId)}` }, `viagem-${slug(userName(t.tecnicoId))}-${t.ida}.pdf`);
+  },
+  async 'pdf-periodo'(el) {
+    const per = periodo();
+    const enc = ordenar(relList().filter((t) => t.status === 'encerrada'));
+    if (!enc.length) return toast('Nenhuma viagem encerrada neste período');
+    const filtro = (rel.tec ? 'Técnico: ' + userName(rel.tec) : 'Todos os técnicos') + ' · só viagens encerradas · pela data de ida';
+    await gerarPdf(el, enc, { titulo: 'Fechamento ' + per.nome, capa: { periodo: per.nome, filtro } }, `fechamento-${per.arq}.pdf`);
+  },
   async ativo(el) {
     const ativar = el.dataset.v === '1';
     if (!ativar && !confirm('Desativar este usuário? Ele perde o acesso ao sistema (as viagens dele continuam salvas).')) return;
@@ -533,6 +627,12 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('change', (e) => {
   if (e.target.name === 'adv') $('#advbox').hidden = e.target.value !== 'sim';
+  const r = e.target.dataset && e.target.dataset.rel;
+  if (r) {
+    rel[r] = e.target.value;
+    if ((r === 'ref') && !rel.ref) rel.ref = today();
+    route();
+  }
 });
 $('#who').addEventListener('change', (e) => {
   userId = e.target.value;
