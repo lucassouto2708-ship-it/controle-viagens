@@ -301,7 +301,9 @@ function vEquipe() {
     </form>
     <div class="panel"><h3>Usuários (${perfis.length})</h3><div class="tw"><table>
       <thead><tr><th>nome</th><th>e-mail</th><th>papel</th><th>status</th><th></th></tr></thead>
-      <tbody>${perfis.map((p) => `<tr><td>${esc(p.nome)}</td><td>${esc(p.email || '—')}</td><td>${PAPEL[p.papel] || esc(p.papel)}</td>
+      <tbody>${perfis.map((p) => `<tr><td><form class="row" data-form="renomear" data-id="${p.id}" style="flex-wrap:nowrap;gap:var(--s2)">
+          <input name="nome" value="${esc(p.nome)}" required aria-label="Nome de ${esc(p.nome)}" style="min-width:140px">
+          <button type="submit">Salvar</button></form></td><td>${esc(p.email || '—')}</td><td>${PAPEL[p.papel] || esc(p.papel)}</td>
         <td>${p.ativo === false ? 'inativo' : 'ativo'}</td>
         <td>${p.id === userId ? '' : `<button class="${p.ativo === false ? '' : 'danger'}" data-act="ativo" data-id="${p.id}" data-v="${p.ativo === false ? '1' : '0'}">${p.ativo === false ? 'Reativar' : 'Desativar'}</button>`}</td></tr>`).join('')}</tbody></table></div></div>
   </div>`;
@@ -363,6 +365,14 @@ async function compress(file) {
 }
 
 const forms = {
+  async renomear(f) {
+    const nome = String(new FormData(f).get('nome')).trim();
+    const atual = perfis.find((p) => p.id === f.dataset.id);
+    if (!nome) return toast('informe o nome');
+    if (atual && atual.nome === nome) return toast('o nome não mudou');
+    await Store.setNome(f.dataset.id, nome);
+    await refresh('nome atualizado');
+  },
   async usuario(f) {
     const v = new FormData(f);
     const dados = { nome: String(v.get('nome')).trim(), email: String(v.get('email')).trim().toLowerCase(), senha: String(v.get('senha')), papel: String(v.get('papel')) };

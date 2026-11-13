@@ -47,6 +47,11 @@
       const { error: e2 } = await sb.from('cv_perfis').insert({ id: u.id, nome, papel, email, ativo: true });
       fail(e2);
     },
+    async setNome(id, nome) {
+      const { data, error } = await sb.from('cv_perfis').update({ nome }).eq('id', id).select('id');
+      fail(error);
+      if (!data.length) throw new Error('Sem permissão para alterar este nome.');
+    },
     async setAtivo(id, ativo) {
       const { error } = await sb.from('cv_perfis').update({ ativo }).eq('id', id);
       fail(error);
