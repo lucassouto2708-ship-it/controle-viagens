@@ -331,7 +331,14 @@ const forms = {
   async login(f) {
     const v = new FormData(f);
     try { await Store.login(String(v.get('email')).trim(), String(v.get('senha'))); }
-    catch (err) { authMsg = 'E-mail ou senha incorretos.'; return route(); }
+    catch (err) {
+      const rede = err && err.code === 'auth/network-request-failed';
+      const muitas = err && err.code === 'auth/too-many-requests';
+      authMsg = rede ? 'Sem conexão. Verifique a internet e tente de novo.'
+        : muitas ? 'Muitas tentativas. Aguarde um pouco e tente de novo.'
+        : 'E-mail ou senha incorretos.';
+      return route();
+    }
     authMsg = '';
     await boot();
   },
