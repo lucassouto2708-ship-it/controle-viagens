@@ -2,10 +2,10 @@
 'use strict';
 
 // Escolhe a camada de dados: Supabase (js/config.js preenchido) ou demo local.
-const useFirebase = !!(window.CV_CONFIG && window.CV_CONFIG.firebase && window.CV_CONFIG.firebase.apiKey);
-const Store = useFirebase ? window.FirebaseStore : window.LocalStore;
+const useSupabase = !!(window.CV_CONFIG && window.CV_CONFIG.url);
+const Store = useSupabase ? window.SupabaseStore : window.LocalStore;
 if (!Store) {
-  document.getElementById('app').innerHTML = '<div class="alert">Não foi possível carregar o Firebase. Verifique a conexão e recarregue a página.</div>';
+  document.getElementById('app').innerHTML = '<div class="alert">Não foi possível carregar o Supabase. Verifique a conexão e recarregue a página.</div>';
   return;
 }
 
@@ -72,7 +72,7 @@ function chrome(route) {
   $('.who').hidden = !userId;
   $('.foot').textContent = Store.demo
     ? 'Protótipo: os dados ficam salvos apenas neste navegador.'
-    : 'Dados salvos com segurança na nuvem (Firebase).';
+    : 'Dados salvos com segurança no Supabase.';
   if (!userId) { $('#nav').innerHTML = ''; return; }
   $('.who-demo').hidden = !Store.demo; $('#whoami').hidden = Store.demo; $('#logout').hidden = Store.demo;
   if (!Store.demo) $('#whoami').textContent = `${me().nome} · ${me().papel === 'financeiro' ? 'financeiro' : 'técnico'}`;
@@ -308,7 +308,7 @@ async function mutate(id, fn, msg) {
   await refresh(msg);
 }
 
-// Reduz fotos até caberem no limite do store (demo: 3 MB; Firebase: 700 KB).
+// Reduz fotos até caberem no limite do store (demo e Supabase: 3 MB).
 const maxFile = () => Store.maxFile || 3 * 1024 * 1024;
 async function compress(file) {
   if (!file.type.startsWith('image/')) return file;
