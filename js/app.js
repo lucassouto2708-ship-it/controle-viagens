@@ -38,12 +38,18 @@ let trips = [];
 let userId = null;
 let authMsg = '';
 const me = () => Store.USERS.find((u) => u.id === userId);
-const isFin = () => me().papel === 'financeiro';
+const isFin = () => ['financeiro', 'admin'].includes(me().papel);
+const isAdmin = () => me().papel === 'admin';
+const PAPEL = { tecnico: 'técnico', financeiro: 'financeiro', admin: 'master' };
 const userName = (id) => (Store.USERS.find((u) => u.id === id) || { nome: id }).nome;
 const visible = () => (isFin() ? trips : trips.filter((t) => t.tecnicoId === userId));
 const byNew = (a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '');
 
-async function load() { trips = await Store.list(); }
+let perfis = [];
+async function load() {
+  trips = await Store.list();
+  perfis = (!Store.demo && isAdmin()) ? await Store.listPerfis() : [];
+}
 
 function totals(t) {
   const adiant = {}; const gasto = {};
@@ -75,12 +81,13 @@ function chrome(route) {
     : 'Dados salvos com segurança no Supabase.';
   if (!userId) { $('#nav').innerHTML = ''; return; }
   $('.who-demo').hidden = !Store.demo; $('#whoami').hidden = Store.demo; $('#logout').hidden = Store.demo;
-  if (!Store.demo) $('#whoami').textContent = `${me().nome} · ${me().papel === 'financeiro' ? 'financeiro' : 'técnico'}`;
-  sel.innerHTML = Store.USERS.map((u) => `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.nome)} — ${u.papel === 'financeiro' ? 'financeiro' : 'técnico'}</option>`).join('');
+  if (!Store.demo) $('#whoami').textContent = `${me().nome} · ${PAPEL[me().papel] || me().papel}`;
+  sel.innerHTML = Store.USERS.map((u) => `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.nome)} — ${PAPEL[u.papel] || u.papel}</option>`).join('');
   const fila = trips.filter((t) => ['enviada', 'conferida'].includes(t.status)).length;
   const items = [['#/', 'Painel'], ['#/nova', 'Nova viagem']];
   if (isFin()) items.push(['#/fila', 'Fila' + (fila ? `<span class="badge">${fila}</span>` : '')]);
   items.push(['#/relatorio', 'Relatório']);
+  if (isAdmin() && !Store.demo) items.push(['#/equipe', 'Equipe']);
   $('#nav').innerHTML = items.map(([h, l]) => `<a href="${h}" class="${route === h ? 'on' : ''}"${route === h ? ' aria-current="page"' : ''}>${l}</a>`).join('');
 }
 
@@ -130,7 +137,7 @@ function vNova() {
     <form class="panel" data-form="nova" autocomplete="off">
       <div class="grid">
         <div class="fld"><label class="f" for="tec">técnico</label>
-          ${isFin() ? `<select id="tec" name="tecnico">${Store.USERS.filter((u) => u.papel === 'tecnico').map((u) => `<option value="${u.id}">${esc(u.nome)}</option>`).join('')}</select>`
+          ${isFin() ? `<select id="tec" name="tecnico" required>${Store.USERS.filter((u) => u.ativo !== false).sort((a, b) => (a.papel === 'tecnico' ? 0 : 1) - (b.papel === 'tecnico' ? 0 : 1) || a.nome.localeCompare(b.nome)).map((u) => `<option value="${u.id}">${esc(u.nome)}${u.papel === 'tecnico' ? '' : ' (' + PAPEL[u.papel] + ')'}</option>`).join('')}</select>`
             : `<input id="tec" value="${esc(me().nome)}" disabled>`}</div>
         <div class="fld"><label class="f" for="c1">cidade</label><input id="c1" name="c1" required placeholder="para onde vai"></div>
         <div class="fld"><label class="f" for="c2">segunda cidade (se houver)</label><input id="c2" name="c2" placeholder="opcional"></div>
@@ -273,6 +280,33 @@ function vViagem(id) {
 }
 
 /* ---------- roteador ---------- */
+function vEquipe() {
+  if (!isAdmin() || Store.demo) return vPainel();
+  return `<div class="view">
+    <div class="head"><h1>Equipe</h1>
+      <p>Cadastre quem acessa o sistema. Técnicos lançam viagens; financeiro confere e acerta; master também gerencia a equipe.</p></div>
+    <form class="panel" data-form="usuario" autocomplete="off" style="max-width:760px">
+      <h3>Novo usuário</h3>
+      <div class="grid">
+        <div class="fld"><label class="f" for="u-nome">nome (como assina)</label><input id="u-nome" name="nome" required></div>
+        <div class="fld"><label class="f" for="u-papel">papel</label>
+          <select id="u-papel" name="papel"><option value="tecnico">técnico</option><option value="financeiro">financeiro</option><option value="admin">master</option></select></div>
+      </div>
+      <div class="grid">
+        <div class="fld"><label class="f" for="u-email">e-mail (será o login)</label><input id="u-email" name="email" type="email" required autocomplete="off"></div>
+        <div class="fld"><label class="f" for="u-senha">senha inicial (mín. 8 caracteres)</label><input id="u-senha" name="senha" type="password" minlength="8" required autocomplete="new-password">
+          <div class="hint">Passe o e-mail e a senha para a pessoa.</div></div>
+      </div>
+      <button class="primary" type="submit">Criar usuário</button>
+    </form>
+    <div class="panel"><h3>Usuários (${perfis.length})</h3><div class="tw"><table>
+      <thead><tr><th>nome</th><th>e-mail</th><th>papel</th><th>status</th><th></th></tr></thead>
+      <tbody>${perfis.map((p) => `<tr><td>${esc(p.nome)}</td><td>${esc(p.email || '—')}</td><td>${PAPEL[p.papel] || esc(p.papel)}</td>
+        <td>${p.ativo === false ? 'inativo' : 'ativo'}</td>
+        <td>${p.id === userId ? '' : `<button class="${p.ativo === false ? '' : 'danger'}" data-act="ativo" data-id="${p.id}" data-v="${p.ativo === false ? '1' : '0'}">${p.ativo === false ? 'Reativar' : 'Desativar'}</button>`}</td></tr>`).join('')}</tbody></table></div></div>
+  </div>`;
+}
+
 function vLogin() {
   return `<div class="view">
     <div class="head"><h1>Entrar</h1><p>Acesse com o e-mail e a senha cadastrados pelo financeiro.</p></div>
@@ -292,6 +326,7 @@ function route() {
   else if (h === '#/nova') html = vNova();
   else if (h === '#/fila') html = vFila();
   else if (h === '#/relatorio') html = vRelatorio();
+  else if (h === '#/equipe') html = vEquipe();
   else { html = vPainel(); key = '#/'; }
   chrome(key);
   $('#app').innerHTML = html;
@@ -328,6 +363,15 @@ async function compress(file) {
 }
 
 const forms = {
+  async usuario(f) {
+    const v = new FormData(f);
+    const dados = { nome: String(v.get('nome')).trim(), email: String(v.get('email')).trim().toLowerCase(), senha: String(v.get('senha')), papel: String(v.get('papel')) };
+    if (!dados.nome) return toast('informe o nome');
+    if (dados.senha.length < 8) return toast('a senha precisa de pelo menos 8 caracteres');
+    try { await Store.createUser(dados); }
+    catch (err) { return toast(/already|registered|exists/i.test(err.message) ? 'e-mail já cadastrado' : 'erro: ' + err.message); }
+    await refresh(`usuário criado: ${dados.nome}. Passe e-mail e senha para a pessoa.`);
+  },
   async login(f) {
     const v = new FormData(f);
     try { await Store.login(String(v.get('email')).trim(), String(v.get('senha'))); }
@@ -344,6 +388,7 @@ const forms = {
   },
   async nova(f) {
     const v = new FormData(f);
+    if (isFin() && !v.get('tecnico')) return toast('escolha quem vai viajar');
     if (v.get('volta') < v.get('ida')) return toast('a volta não pode ser antes da ida');
     const cidades = [v.get('c1'), v.get('c2')].flatMap((c) => String(c || '').split(/[,;/]/)).map((c) => c.trim()).filter(Boolean);
     const adiantamento = {};
@@ -409,6 +454,12 @@ const forms = {
 };
 
 const acts = {
+  async ativo(el) {
+    const ativar = el.dataset.v === '1';
+    if (!ativar && !confirm('Desativar este usuário? Ele perde o acesso ao sistema (as viagens dele continuam salvas).')) return;
+    await Store.setAtivo(el.dataset.id, ativar);
+    await refresh(ativar ? 'usuário reativado' : 'usuário desativado');
+  },
   async aprovar(el) {
     await mutate(el.dataset.id, (t) => {
       const s = totals(t).saldo;

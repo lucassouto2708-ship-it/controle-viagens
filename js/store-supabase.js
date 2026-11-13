@@ -16,10 +16,10 @@
       const { data: { session }, error: e1 } = await sb.auth.getSession();
       fail(e1);
       if (!session) return { user: null };
-      const { data, error } = await sb.from('cv_perfis').select('id,nome,papel');
+      const { data, error } = await sb.from('cv_perfis').select('id,nome,papel,email,ativo');
       fail(error);
       const user = (data || []).find((p) => p.id === session.user.id);
-      if (!user) return { user: null, semPerfil: true };
+      if (!user || user.ativo === false) return { user: null, semPerfil: true };
       S.USERS = data;
       return { user };
     },
@@ -28,6 +28,29 @@
       fail(error);
     },
     async logout() { await sb.auth.signOut(); S.USERS = []; },
+
+    // ---- equipe (só o master chama; o RLS garante) ----
+    async listPerfis() {
+      const { data, error } = await sb.from('cv_perfis').select('id,nome,papel,email,ativo').order('nome');
+      fail(error);
+      S.USERS = data;
+      return data;
+    },
+    // Cria a conta de login por um cliente separado (sem sessão), para não trocar o usuário logado,
+    // e cadastra o perfil com a sessão do master.
+    async createUser({ nome, email, senha, papel }) {
+      const sb2 = window.supabase.createClient(cfg.url, cfg.anonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+      const { data, error } = await sb2.auth.signUp({ email, password: senha });
+      fail(error);
+      const u = data && data.user;
+      if (!u || (u.identities && u.identities.length === 0)) throw new Error('User already registered');
+      const { error: e2 } = await sb.from('cv_perfis').insert({ id: u.id, nome, papel, email, ativo: true });
+      fail(e2);
+    },
+    async setAtivo(id, ativo) {
+      const { error } = await sb.from('cv_perfis').update({ ativo }).eq('id', id);
+      fail(error);
+    },
 
     async list() {
       const { data, error } = await sb.from('cv_viagens')

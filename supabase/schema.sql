@@ -4,7 +4,8 @@
 create table if not exists public.cv_perfis (
   id uuid primary key references auth.users(id) on delete cascade,
   nome text not null,
-  papel text not null check (papel in ('tecnico','financeiro')),
+  papel text not null check (papel in ('tecnico','financeiro','admin')),
+  email text,
   ativo boolean not null default true,
   criado_em timestamptz not null default now()
 );
@@ -55,7 +56,11 @@ language sql stable security definer set search_path = public as $$
 $$;
 create or replace function public.cv_is_fin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select coalesce(public.cv_papel() = 'financeiro', false)
+  select coalesce(public.cv_papel() in ('financeiro','admin'), false)
+$$;
+create or replace function public.cv_is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.cv_papel() = 'admin', false)
 $$;
 
 -- técnico não pode alterar dono nem o acerto financeiro
@@ -84,9 +89,9 @@ drop policy if exists cv_perfis_upd on public.cv_perfis;
 create policy cv_perfis_sel on public.cv_perfis for select to authenticated
   using (id = auth.uid() or public.cv_is_fin());
 create policy cv_perfis_ins on public.cv_perfis for insert to authenticated
-  with check (public.cv_is_fin());
+  with check (public.cv_is_admin());
 create policy cv_perfis_upd on public.cv_perfis for update to authenticated
-  using (public.cv_is_fin()) with check (public.cv_is_fin());
+  using (public.cv_is_admin()) with check (public.cv_is_admin());
 
 drop policy if exists cv_viagens_sel on public.cv_viagens;
 drop policy if exists cv_viagens_ins on public.cv_viagens;
