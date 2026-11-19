@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="104" fill="#1E4E8C"/>
+  <g fill="#fff">
+    <!-- bomba de gasolina -->
+    <rect x="72" y="112" width="140" height="280" rx="14"/>
+    <rect x="52" y="392" width="180" height="28" rx="8"/>
+    <path d="M212 172h32q12 0 12 12v116" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="246" y="298" width="22" height="30" rx="6"/>
+    <!-- garfo -->
+    <rect x="316" y="112" width="12" height="80" rx="6"/>
+    <rect x="334" y="112" width="12" height="80" rx="6"/>
+    <rect x="352" y="112" width="12" height="80" rx="6"/>
+    <path d="M316 180h48v8q0 30-18 36h-12q-18-6-18-36z"/>
+    <rect x="334" y="214" width="12" height="178" rx="6"/>
+    <!-- faca -->
+    <path d="M396 112q40 14 40 90v54h-40z"/>
+    <rect x="396" y="250" width="40" height="0"/>
+    <rect x="404" y="250" width="24" height="142" rx="8"/>
+  </g>
+  <rect x="96" y="140" width="92" height="70" rx="6" fill="#1E4E8C"/>
+</svg>
