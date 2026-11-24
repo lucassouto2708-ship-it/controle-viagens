@@ -66,6 +66,8 @@ function totals(t) {
 // (o servidor calcula o mesmo valor ao criar a viagem; aqui serve para exibir e para o modo demo)
 const bancoDe = (tecId) => r2(trips.filter((t) => t.tecnicoId === tecId).reduce((s, t) =>
   s + (t.acerto && t.acerto.tipo === 'banco' ? Number(t.acerto.valor) : 0) - Number(t.adiantamento?.banco || 0), 0));
+// Quanto do banco pode abater o que a empresa deve nesta viagem (só quando há reembolso a pagar).
+const bancoAbater = (t) => r2(Math.min(Math.max(0, bancoDe(t.tecnicoId)), Math.max(0, -totals(t).saldo)));
 const ACERTO = { reembolso: 'reembolso pago', devolucao: 'devolução recebida', banco: 'sobra mantida no banco' };
 const saldoTxt = (s) => (s > 0 ? 'técnico devolve' : s < 0 ? 'empresa reembolsa' : 'contas zeradas');
 // Viagem encerrada já foi acertada: mostra como foi o acerto em vez de um saldo "em aberto".
@@ -368,6 +370,7 @@ function vViagem(id) {
       <button class="primary" type="submit">Assinar e enviar</button></form>`;
   if (t.assinatura) acao += `<div class="alert"><span>Assinado eletronicamente por <b>${esc(t.assinatura.nome)}</b> em ${dtt(t.assinatura.em)}</span></div>`;
   if (isFin() && t.status === 'enviada') acao += `<div class="panel"><h3>Conferência</h3>
+      ${bancoAbater(t) ? `<p style="margin-top:0">${esc(userName(t.tecnicoId))} tem ${brl(bancoDe(t.tecnicoId))} no banco. Ao aprovar, <b>${brl(bancoAbater(t))}</b> serão abatidos do reembolso.</p>` : ''}
       <div class="row"><button class="primary" data-act="aprovar" data-id="${t.id}">Aprovar prestação</button></div>
       <hr class="rule"><form data-form="correcao" data-id="${t.id}">
       <div class="fld"><label class="f" for="mot">ou peça correção ao técnico</label><textarea id="mot" name="motivo" required placeholder="o que precisa ser ajustado?"></textarea></div>
@@ -644,6 +647,11 @@ const acts = {
   },
   async aprovar(el) {
     await mutate(el.dataset.id, (t) => {
+      const usar = bancoAbater(t);
+      if (usar) {
+        t.adiantamento.banco = r2(Number(t.adiantamento.banco || 0) + usar);
+        log(t, `Saldo do banco abatido do reembolso: ${brl(usar)}`);
+      }
       const s = totals(t).saldo;
       t.status = s === 0 ? 'encerrada' : 'conferida';
       log(t, 'Prestação aprovada' + (s === 0 ? ' · contas zeradas, viagem encerrada' : ' · falta o acerto de ' + brl(Math.abs(s))));
