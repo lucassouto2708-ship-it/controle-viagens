@@ -68,6 +68,8 @@ const bancoDe = (tecId) => r2(trips.filter((t) => t.tecnicoId === tecId).reduce(
   s + (t.acerto && t.acerto.tipo === 'banco' ? Number(t.acerto.valor) : 0) - Number(t.adiantamento?.banco || 0), 0));
 const ACERTO = { reembolso: 'reembolso pago', devolucao: 'devolução recebida', banco: 'sobra mantida no banco' };
 const saldoTxt = (s) => (s > 0 ? 'técnico devolve' : s < 0 ? 'empresa reembolsa' : 'contas zeradas');
+// Viagem encerrada já foi acertada: mostra como foi o acerto em vez de um saldo "em aberto".
+const acertoTxt = (t) => (t.acerto && t.acerto.valor ? `${ACERTO[t.acerto.tipo] || t.acerto.tipo} ${brl(t.acerto.valor)}` : 'contas zeradas');
 
 function log(t, texto) { t.historico.push({ em: new Date().toISOString(), por: me().nome, texto }); }
 
@@ -107,7 +109,7 @@ function tripCard(t) {
     <h3>${esc(t.cidades.join(' · '))}</h3>
     <div class="who2">${esc(userName(t.tecnicoId))}</div>
     <div class="meta">${dt(t.ida)}${t.volta && t.volta !== t.ida ? ' → ' + dt(t.volta) : ''}</div>
-    <div class="val"><span>gasto ${brl(x.G)}</span><span class="${x.saldo < 0 ? 'blue' : ''}">${x.A || x.G ? esc(saldoTxt(x.saldo)) : '—'}</span></div>
+    <div class="val"><span>gasto ${brl(x.G)}</span><span class="${x.saldo < 0 ? 'blue' : ''}">${t.status === 'encerrada' ? esc(acertoTxt(t)) : x.A || x.G ? esc(saldoTxt(x.saldo)) : '—'}</span></div>
   </a>`;
 }
 
@@ -283,7 +285,7 @@ function vRelatorio() {
       <tbody>${CATS.map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(gCat[k])}</td></tr>`).join('')}</tbody></table></div></div>
     <div class="panel"><h3>Viagens</h3>${list.length ? `<div class="tw"><table>
       <thead><tr><th>data</th><th>técnico</th><th>cidades</th><th>status</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">saldo</th><th class="noprint"></th></tr></thead>
-      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${brl(x.saldo)}</td><td class="noprint">${t.status === 'encerrada' ? `<button data-act="pdf-viagem" data-id="${t.id}">PDF</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma viagem neste período.</p>'}
+      <tbody>${list.map((t) => { const x = totals(t); return `<tr><td>${dt(t.ida)}</td><td>${esc(userName(t.tecnicoId))}</td><td><a href="#/viagem/${t.id}">${esc(t.cidades.join(', '))}</a></td><td>${STATUS[t.status]}</td><td class="r">${brl(x.A)}</td><td class="r">${brl(x.G)}</td><td class="r">${t.status === 'encerrada' ? `${brl(0)}<div class="muted" style="font-size:12px">${esc(acertoTxt(t))}</div>` : brl(x.saldo)}</td><td class="noprint">${t.status === 'encerrada' ? `<button data-act="pdf-viagem" data-id="${t.id}">PDF</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nenhuma viagem neste período.</p>'}
       <div class="row noprint" style="margin-top:16px"><button onclick="window.print()">Imprimir / salvar PDF</button></div></div>
   </div>`;
 }
@@ -301,7 +303,9 @@ function vViagem(id) {
   const canEditDesp = canDesp || (isFin() && t.status !== 'encerrada');
   const canDelTrip = (owner && t.status === 'em_viagem') || isFin();
   const canClose = owner && open && (t.despesas.length > 0 || x.A > 0);
-  const label = x.saldo > 0 ? 'o técnico devolve' : x.saldo < 0 ? 'a empresa reembolsa' : 'contas zeradas';
+  const label = t.status === 'encerrada'
+    ? ({ reembolso: 'reembolsado ao técnico', devolucao: 'devolvido pelo técnico', banco: 'guardado no banco' }[t.acerto?.tipo] || 'contas zeradas')
+    : x.saldo > 0 ? 'o técnico devolve' : x.saldo < 0 ? 'a empresa reembolsa' : 'contas zeradas';
 
   const resumo = `<div class="panel summary">
     <div class="grid">

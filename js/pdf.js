@@ -91,17 +91,17 @@
       const tot = trips.map((t) => totals(t));
       const A = tot.reduce((s, x) => s + x.A, 0); const G = tot.reduce((s, x) => s + x.G, 0);
       kv('Viagens', String(trips.length)); kv('Adiantado', brl(A)); kv('Gasto declarado', brl(G));
-      kv('Saldo', brl(Math.abs(A - G)) + (A - G > 0 ? ' (técnicos devolvem)' : A - G < 0 ? ' (empresa reembolsa)' : ' (zerado)'));
+      kv('Diferença (já acertada)', brl(Math.abs(A - G)) + (A - G > 0 ? ' (sobra dos técnicos)' : A - G < 0 ? ' (reembolsado pela empresa)' : ' (zerado)'));
       h2('Por técnico');
       const porTec = new Map();
       trips.forEach((t, i) => { const k = userName(t.tecnicoId); const o = porTec.get(k) || { n: 0, A: 0, G: 0 }; o.n++; o.A += tot[i].A; o.G += tot[i].G; porTec.set(k, o); });
-      table([{ l: 'TÉCNICO', w: CW - 40 - 3 * 80 }, { l: 'VIAGENS', w: 40, r: true }, { l: 'ADIANTADO', w: 80, r: true }, { l: 'GASTO', w: 80, r: true }, { l: 'SALDO', w: 80, r: true }],
+      table([{ l: 'TÉCNICO', w: CW - 40 - 3 * 80 }, { l: 'VIAGENS', w: 40, r: true }, { l: 'ADIANTADO', w: 80, r: true }, { l: 'GASTO', w: 80, r: true }, { l: 'DIFERENÇA', w: 80, r: true }],
         [...porTec.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, o]) => [k, String(o.n), brl(o.A), brl(o.G), brl(o.A - o.G)]));
       h2('Por categoria');
       table([{ l: 'CATEGORIA', w: CW - 90 }, { l: 'GASTO', w: 90, r: true }],
         CATS.map(([k, n]) => [n, brl(tot.reduce((s, x) => s + x.gasto[k], 0))]), ['Total', brl(G)]);
       h2('Viagens do período');
-      table([{ l: 'IDA', w: 62 }, { l: 'TÉCNICO', w: 100 }, { l: 'CIDADES', w: CW - 62 - 100 - 3 * 70 }, { l: 'ADIANTADO', w: 70, r: true }, { l: 'GASTO', w: 70, r: true }, { l: 'SALDO', w: 70, r: true }],
+      table([{ l: 'IDA', w: 62 }, { l: 'TÉCNICO', w: 100 }, { l: 'CIDADES', w: CW - 62 - 100 - 3 * 70 }, { l: 'ADIANTADO', w: 70, r: true }, { l: 'GASTO', w: 70, r: true }, { l: 'DIFERENÇA', w: 70, r: true }],
         trips.map((t, i) => [dt(t.ida), userName(t.tecnicoId), t.cidades.join(', '), brl(tot[i].A), brl(tot[i].G), brl(tot[i].A - tot[i].G)]));
     }
 
@@ -116,7 +116,7 @@
       kv('Período', dt(t.ida) + (t.volta && t.volta !== t.ida ? ' a ' + dt(t.volta) : ''));
       if (t.finalidade) kv('Finalidade', t.finalidade);
       kv('Adiantado', brl(x.A)); kv('Gasto declarado', brl(x.G));
-      kv(x.saldo > 0 ? 'Técnico devolve' : x.saldo < 0 ? 'Empresa reembolsa' : 'Saldo', x.saldo === 0 ? 'contas zeradas' : brl(Math.abs(x.saldo)));
+      kv(t.acerto ? ({ reembolso: 'Reembolsado ao técnico', devolucao: 'Devolvido pelo técnico', banco: 'Guardado no banco' }[t.acerto.tipo] || 'Acertado') : x.saldo > 0 ? 'Técnico devolve' : x.saldo < 0 ? 'Empresa reembolsa' : 'Saldo', x.saldo === 0 ? 'contas zeradas' : brl(Math.abs(x.saldo)));
 
       h2('Por categoria');
       table([{ l: 'CATEGORIA', w: CW - 3 * 85 }, { l: 'ADIANTADO', w: 85, r: true }, { l: 'GASTO', w: 85, r: true }, { l: 'DIFERENÇA', w: 85, r: true }],
