@@ -37,6 +37,7 @@ const STATUS = {
 let trips = [];
 let userId = null;
 let authMsg = '';
+let editDesp = null; // id da despesa em edição na tela da viagem
 const me = () => Store.USERS.find((u) => u.id === userId);
 const isFin = () => ['financeiro', 'admin'].includes(me().papel);
 const isAdmin = () => me().papel === 'admin';
@@ -55,10 +56,17 @@ function totals(t) {
   const adiant = {}; const gasto = {};
   CATS.forEach(([k]) => { adiant[k] = r2(t.adiantamento?.[k]); gasto[k] = 0; });
   t.despesas.forEach((d) => { gasto[d.categoria] = r2((gasto[d.categoria] || 0) + Number(d.valor)); });
-  const A = r2(Object.values(adiant).reduce((s, v) => s + v, 0));
+  const banco = r2(t.adiantamento?.banco); // sobra de viagens anteriores, já somada ao adiantamento
+  const A = r2(Object.values(adiant).reduce((s, v) => s + v, 0) + banco);
   const G = r2(Object.values(gasto).reduce((s, v) => s + v, 0));
-  return { adiant, gasto, A, G, saldo: r2(A - G) };
+  return { adiant, gasto, banco, A, G, saldo: r2(A - G) };
 }
+
+// Banco do técnico: sobras deixadas no banco menos o que já foi usado como adiantamento.
+// (o servidor calcula o mesmo valor ao criar a viagem; aqui serve para exibir e para o modo demo)
+const bancoDe = (tecId) => r2(trips.filter((t) => t.tecnicoId === tecId).reduce((s, t) =>
+  s + (t.acerto && t.acerto.tipo === 'banco' ? Number(t.acerto.valor) : 0) - Number(t.adiantamento?.banco || 0), 0));
+const ACERTO = { reembolso: 'reembolso pago', devolucao: 'devolução recebida', banco: 'sobra mantida no banco' };
 const saldoTxt = (s) => (s > 0 ? 'técnico devolve' : s < 0 ? 'empresa reembolsa' : 'contas zeradas');
 
 function log(t, texto) { t.historico.push({ em: new Date().toISOString(), por: me().nome, texto }); }
@@ -118,11 +126,24 @@ function vPainel() {
       <div class="stat"><div class="l">${isFin() ? 'para conferir / acertar' : 'com o financeiro'}</div><div class="n">${conferir}</div></div>
       <div class="stat"><div class="l">total gasto</div><div class="n">${brl(gasto)}</div></div>
     </div></div>
+    ${vBanco()}
     ${list.length ? `<div class="cards">${list.map(tripCard).join('')}</div>` : `
       <div class="empty"><p>Nenhuma viagem cadastrada.</p>
         <div class="row" style="justify-content:center"><a class="btn primary" href="#/nova">Nova viagem</a>
         ${Store.demo ? '<button data-act="demo">Carregar exemplo</button>' : ''}</div></div>`}
   </div>`;
+}
+
+function vBanco() {
+  if (!isFin()) {
+    const b = bancoDe(userId);
+    return b > 0 ? `<div class="alert">Você tem <b>${brl(b)}</b> no banco (sobra de viagens anteriores). Esse valor entra automaticamente como adiantamento na sua próxima viagem.</div>` : '';
+  }
+  const l = Store.USERS.map((u) => ({ u, b: bancoDe(u.id) })).filter((x) => x.b > 0);
+  return l.length ? `<div class="panel"><h3>Banco dos técnicos</h3>
+    <p class="muted" style="margin-top:0">Sobras mantidas com o técnico. Entram como adiantamento na próxima viagem dele.</p>
+    <div class="tw"><table><thead><tr><th>técnico</th><th class="r">saldo</th></tr></thead>
+    <tbody>${l.map((x) => `<tr><td>${esc(x.u.nome)}</td><td class="r">${brl(x.b)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
 }
 
 function advFields(v = {}) {
@@ -153,6 +174,7 @@ function vNova() {
         <label><input type="radio" name="adv" value="sim"><span>Sim</span></label></div>
         <div class="hint">Sem adiantamento: você paga do bolso e pede reembolso depois.</div></div>
       <div id="advbox" hidden>${advFields()}<div class="hint">Separe por finalidade: abastecimento, hospedagem, alimentação.</div></div>
+      <div class="hint">Se houver saldo no banco (sobra de viagem anterior), ele é somado ao adiantamento automaticamente${isFin() ? '' : bancoDe(userId) > 0 ? ': você tem ' + brl(bancoDe(userId)) : ''}.</div>
       <div class="row" style="margin-top:18px"><button class="primary" type="submit">Criar viagem</button><a class="btn" href="#/">Cancelar</a></div>
     </form></div>`;
 }
@@ -276,6 +298,8 @@ function vViagem(id) {
   const open = ['em_viagem', 'correcao'].includes(t.status);
   const canDesp = owner && open;
   const canAdv = (owner && open) || (isFin() && t.status !== 'encerrada');
+  const canEditDesp = canDesp || (isFin() && t.status !== 'encerrada');
+  const canDelTrip = (owner && t.status === 'em_viagem') || isFin();
   const canClose = owner && open && (t.despesas.length > 0 || x.A > 0);
   const label = x.saldo > 0 ? 'o técnico devolve' : x.saldo < 0 ? 'a empresa reembolsa' : 'contas zeradas';
 
@@ -287,22 +311,37 @@ function vViagem(id) {
     </div>
     <hr class="rule" style="border-top-width:1.5px">
     <div class="tw"><table><thead><tr><th>categoria</th><th class="r">adiantado</th><th class="r">gasto</th><th class="r">diferença</th></tr></thead>
-    <tbody>${CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(x.adiant[k])}</td><td class="r">${brl(x.gasto[k])}</td><td class="r">${brl(x.adiant[k] - x.gasto[k])}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nada lançado ainda.</td></tr>'}</tbody></table></div>
+    <tbody>${(CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => `<tr><td>${n}</td><td class="r">${brl(x.adiant[k])}</td><td class="r">${brl(x.gasto[k])}</td><td class="r">${brl(x.adiant[k] - x.gasto[k])}</td></tr>`).join('') + (x.banco ? `<tr><td>banco (sobra anterior)</td><td class="r">${brl(x.banco)}</td><td class="r">${brl(0)}</td><td class="r">${brl(x.banco)}</td></tr>` : '')) || '<tr><td colspan="4" class="muted">Nada lançado ainda.</td></tr>'}</tbody></table></div>
   </div>`;
 
   const adv = canAdv ? `<form class="panel" data-form="adiant" data-id="${t.id}">
     <h3>Adiantamento</h3>
     <p class="muted" style="margin-top:0">${isFin() ? 'Quanto foi liberado, por finalidade.' : 'Quanto o financeiro passou para esta viagem (deixe em branco se nada).'}</p>
-    ${advFields(t.adiantamento)}<button type="submit">Salvar adiantamento</button></form>` : '';
+    ${advFields(t.adiantamento)}${x.banco ? `<div class="hint">Além disso, ${brl(x.banco)} do banco (sobra de viagem anterior) já está somado ao adiantamento.</div>` : ''}<button type="submit">Salvar adiantamento</button></form>` : '';
 
   const despesas = `<div class="panel"><h3>Despesas</h3>
     ${t.despesas.length ? `<div class="tw"><table>
-      <thead><tr><th>data</th><th>categoria</th><th>descrição</th><th class="r">valor</th><th>nota</th>${canDesp ? '<th></th>' : ''}</tr></thead>
+      <thead><tr><th>data</th><th>categoria</th><th>descrição</th><th class="r">valor</th><th>nota</th>${canEditDesp ? '<th></th>' : ''}</tr></thead>
       <tbody>${t.despesas.map((d) => `<tr><td>${dt(d.data)}</td><td>${catName(d.categoria)}</td><td>${esc(d.obs)}</td><td class="r">${brl(d.valor)}</td>
         <td>${d.arquivoId ? `<button data-act="ver" data-file="${esc(d.arquivoId)}">Ver</button>` : '<span class="muted">—</span>'}</td>
-        ${canDesp ? `<td><button class="danger" data-act="del-desp" data-id="${t.id}" data-d="${d.id}" aria-label="Remover despesa">Remover</button></td>` : ''}</tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="3">total</td><td class="r">${brl(x.G)}</td><td></td>${canDesp ? '<td></td>' : ''}</tr></tfoot></table></div>`
+        ${canEditDesp ? `<td class="row" style="flex-wrap:nowrap"><button data-act="edit-desp" data-d="${d.id}" aria-label="Editar despesa">Editar</button>${canDesp ? `<button class="danger" data-act="del-desp" data-id="${t.id}" data-d="${d.id}" aria-label="Remover despesa">Remover</button>` : ''}</td>` : ''}</tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="3">total</td><td class="r">${brl(x.G)}</td><td></td>${canEditDesp ? '<td></td>' : ''}</tr></tfoot></table></div>`
       : '<p class="muted">Nenhuma despesa lançada.</p>'}
+    ${(() => {
+      const e = canEditDesp && t.despesas.find((d) => d.id === editDesp);
+      if (!e) return '';
+      return `<hr class="rule"><form data-form="editdesp" data-id="${t.id}" data-d="${e.id}">
+      <h3 style="font-size:18px">Editar despesa</h3>
+      <div class="grid">
+        <div class="fld"><label class="f" for="e-data">data</label><input id="e-data" name="data" type="date" required value="${esc(e.data)}"></div>
+        <div class="fld"><label class="f" for="e-cat">categoria</label><select id="e-cat" name="categoria">${CATS.map(([k, n]) => `<option value="${k}"${e.categoria === k ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div class="fld"><label class="f" for="e-val">valor (R$)</label><input id="e-val" name="valor" type="number" inputmode="decimal" min="0.01" step="0.01" required value="${esc(e.valor)}"></div>
+      </div>
+      <div class="fld"><label class="f" for="e-obs">descrição</label><input id="e-obs" name="obs" value="${esc(e.obs)}"></div>
+      <div class="fld"><label class="f" for="e-arq">trocar a nota (opcional)</label><input id="e-arq" name="arquivo" type="file" accept="image/*,application/pdf">
+        <div class="hint">${e.arquivoNome ? 'Nota atual: ' + esc(e.arquivoNome) + '. ' : ''}Deixe em branco para manter.</div></div>
+      <div class="row"><button class="primary" type="submit">Salvar alterações</button><button type="button" data-act="cancel-edit">Cancelar</button></div></form>`;
+    })()}
     ${canDesp ? `<hr class="rule"><form data-form="desp" data-id="${t.id}">
       <h3 style="font-size:18px">Adicionar despesa</h3>
       <div class="grid">
@@ -332,11 +371,15 @@ function vViagem(id) {
   if (isFin() && t.status === 'conferida') acao += `<form class="panel" data-form="acerto" data-id="${t.id}">
       <h3>Acerto</h3>
       <p style="margin-top:0">${x.saldo < 0 ? `Reembolsar <b>${brl(-x.saldo)}</b> para ${esc(userName(t.tecnicoId))}.` : `${esc(userName(t.tecnicoId))} devolve <b>${brl(x.saldo)}</b>.`}</p>
+      ${x.saldo > 0 ? `<div class="fld"><span class="f" style="display:block;margin-bottom:6px">o que fazer com a sobra?</span>
+        <div class="seg"><label><input type="radio" name="destino" value="devolucao" checked><span>Técnico devolveu</span></label>
+        <label><input type="radio" name="destino" value="banco"><span>Manter no banco</span></label></div>
+        <div class="hint">No banco, a sobra de ${brl(x.saldo)} fica com o técnico e entra como adiantamento na próxima viagem dele.</div></div>` : ''}
       <div class="fld"><label class="f" for="ac-obs">observação</label><input id="ac-obs" name="obs" placeholder="ex.: pix enviado (opcional)"></div>
-      <button class="primary" type="submit">${x.saldo < 0 ? 'Registrar reembolso pago' : 'Registrar devolução recebida'}</button></form>`;
+      <button class="primary" type="submit">${x.saldo < 0 ? 'Registrar reembolso pago' : 'Registrar acerto'}</button></form>`;
   if (t.status === 'conferida' && !isFin()) acao += `<div class="alert">Aprovada. Aguardando o acerto de ${x.saldo < 0 ? 'reembolso' : 'devolução'} de ${brl(Math.abs(x.saldo))}</div>`;
   if (t.status === 'enviada' && !isFin()) acao += `<div class="alert">Enviada ao financeiro. Aguardando conferência.</div>`;
-  if (t.status === 'encerrada') acao += `<div class="alert">Viagem encerrada${t.acerto ? ` · ${t.acerto.tipo === 'reembolso' ? 'reembolso pago' : 'devolução recebida'}: ${brl(t.acerto.valor)} (${dtt(t.acerto.em)})` : ''}</div>`;
+  if (t.status === 'encerrada') acao += `<div class="alert">Viagem encerrada${t.acerto ? ` · ${ACERTO[t.acerto.tipo] || t.acerto.tipo}: ${brl(t.acerto.valor)} (${dtt(t.acerto.em)})` : ''}</div>`;
 
   return `<div class="view">
     <a class="back" href="#/">← voltar</a>
@@ -346,7 +389,7 @@ function vViagem(id) {
       ${t.status === 'encerrada' ? `<div class="row noprint" style="margin-top:12px"><button class="primary" data-act="pdf-viagem" data-id="${t.id}">Baixar PDF com as notas</button></div>` : ''}</div>
     ${acao}${resumo}${adv}${despesas}
     <div class="panel"><h3>Histórico</h3><ul class="hist">${t.historico.slice().reverse().map((h) => `<li><span class="t">${dtt(h.em)} · ${esc(h.por)}</span>${esc(h.texto)}</li>`).join('')}</ul>
-      ${owner && t.status === 'em_viagem' ? `<div class="row" style="margin-top:14px"><button class="danger" data-act="excluir" data-id="${t.id}">Excluir viagem</button></div>` : ''}</div>
+      ${canDelTrip ? `<div class="row" style="margin-top:14px"><button class="danger" data-act="excluir" data-id="${t.id}">Excluir viagem</button></div>` : ''}</div>
   </div>`;
 }
 
@@ -474,13 +517,15 @@ const forms = {
     const cidades = [v.get('c1'), v.get('c2')].flatMap((c) => String(c || '').split(/[,;/]/)).map((c) => c.trim()).filter(Boolean);
     const adiantamento = {};
     CATS.forEach(([k]) => { adiantamento[k] = v.get('adv') === 'sim' ? r2(v.get('adv_' + k)) : 0; });
+    const tecnicoId = isFin() ? v.get('tecnico') : userId;
+    adiantamento.banco = Math.max(0, bancoDe(tecnicoId)); // o servidor recalcula este valor
     const t = {
       id: Store.uid(), criadoEm: new Date().toISOString(),
-      tecnicoId: isFin() ? v.get('tecnico') : userId,
+      tecnicoId,
       cidades, ida: v.get('ida'), volta: v.get('volta'), finalidade: String(v.get('finalidade') || '').trim(),
       adiantamento, status: 'em_viagem', despesas: [], assinatura: null, acerto: null, correcao: '', historico: [],
     };
-    log(t, 'Viagem criada');
+    log(t, 'Viagem criada' + (adiantamento.banco ? ` · saldo do banco somado ao adiantamento: ${brl(adiantamento.banco)}` : ''));
     await Store.save(t);
     await load();
     location.hash = '#/viagem/' + t.id;
@@ -506,6 +551,32 @@ const forms = {
       log(t, `Despesa: ${catName(d.categoria)} ${brl(d.valor)}`);
     }, 'despesa registrada');
   },
+  async editdesp(f) {
+    const v = new FormData(f);
+    const file = v.get('arquivo');
+    let novo = null;
+    if (file && file.size) {
+      if (!file.type.startsWith('image/') && file.size > maxFile()) return toast('PDF acima de ' + Math.round(maxFile() / 1024) + ' KB');
+      const blob = await compress(file);
+      novo = await Store.putFile(Store.uid(), blob, f.dataset.id);
+    }
+    let antigo = null;
+    try {
+      await mutate(f.dataset.id, (t) => {
+        const d = t.despesas.find((x) => x.id === f.dataset.d);
+        if (!d) return;
+        const antes = `${catName(d.categoria)} ${brl(d.valor)}`;
+        Object.assign(d, { data: v.get('data'), categoria: v.get('categoria'), valor: r2(v.get('valor')), obs: String(v.get('obs') || '').trim() });
+        if (novo) { antigo = d.arquivoId; d.arquivoId = novo; d.arquivoNome = file.name; }
+        log(t, `Despesa editada: ${antes} → ${catName(d.categoria)} ${brl(d.valor)}${novo ? ' (nota trocada)' : ''}`);
+      }, 'despesa atualizada');
+    } catch (err) {
+      if (novo) Store.delFile(novo);
+      throw err;
+    }
+    editDesp = null; route();
+    if (antigo) Store.delFile(antigo);
+  },
   async assinar(f) {
     const v = new FormData(f);
     const nome = String(v.get('nome')).trim();
@@ -524,12 +595,15 @@ const forms = {
     }, 'correção pedida ao técnico');
   },
   async acerto(f) {
-    const obs = String(new FormData(f).get('obs') || '').trim();
+    const fd2 = new FormData(f);
+    const obs = String(fd2.get('obs') || '').trim();
+    const destino = fd2.get('destino');
     await mutate(f.dataset.id, (t) => {
       const s = totals(t).saldo;
-      t.acerto = { tipo: s < 0 ? 'reembolso' : 'devolucao', valor: Math.abs(s), em: new Date().toISOString(), por: me().nome };
+      const tipo = s < 0 ? 'reembolso' : destino === 'banco' ? 'banco' : 'devolucao';
+      t.acerto = { tipo, valor: Math.abs(s), em: new Date().toISOString(), por: me().nome };
       t.status = 'encerrada';
-      log(t, (s < 0 ? 'Reembolso pago: ' : 'Devolução recebida: ') + brl(Math.abs(s)) + (obs ? ' — ' + obs : ''));
+      log(t, { reembolso: 'Reembolso pago: ', devolucao: 'Devolução recebida: ', banco: 'Sobra mantida no banco do técnico (entra como adiantamento na próxima viagem): ' }[tipo] + brl(Math.abs(s)) + (obs ? ' — ' + obs : ''));
     }, 'acerto registrado · viagem encerrada');
   },
 };
@@ -571,6 +645,8 @@ const acts = {
       log(t, 'Prestação aprovada' + (s === 0 ? ' · contas zeradas, viagem encerrada' : ' · falta o acerto de ' + brl(Math.abs(s))));
     }, 'prestação aprovada');
   },
+  'edit-desp'(el) { editDesp = el.dataset.d; route(); const f = document.querySelector('form[data-form="editdesp"]'); if (f) f.scrollIntoView({ block: 'center' }); return Promise.resolve(); },
+  'cancel-edit'() { editDesp = null; route(); return Promise.resolve(); },
   async 'del-desp'(el) {
     if (!confirm('Remover esta despesa?')) return;
     let fid;
@@ -584,7 +660,12 @@ const acts = {
     if (fid) Store.delFile(fid);
   },
   async excluir(el) {
-    if (!confirm('Excluir esta viagem e todas as notas anexadas? Não dá para desfazer.')) return;
+    const t = trips.find((x) => x.id === el.dataset.id);
+    let aviso = 'Excluir esta viagem e todas as notas anexadas? Não dá para desfazer.';
+    if (t && t.status === 'encerrada') aviso = 'Esta viagem já está ENCERRADA. ' + aviso;
+    if (t && t.acerto && t.acerto.tipo === 'banco') aviso += `\n\nAtenção: a sobra de ${brl(t.acerto.valor)} que ficou no banco do técnico por esta viagem também será perdida.`;
+    if (t && Number(t.adiantamento?.banco) > 0) aviso += `\n\nO saldo de ${brl(t.adiantamento.banco)} do banco usado nesta viagem volta para o técnico.`;
+    if (!confirm(aviso)) return;
     await Store.remove(el.dataset.id);
     location.hash = '#/';
     await refresh('viagem excluída');
@@ -640,7 +721,7 @@ $('#who').addEventListener('change', (e) => {
   location.hash = '#/';
   route();
 });
-window.addEventListener('hashchange', () => { route(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { editDesp = null; route(); window.scrollTo(0, 0); });
 
 $('#logout').addEventListener('click', async () => {
   await Store.logout();

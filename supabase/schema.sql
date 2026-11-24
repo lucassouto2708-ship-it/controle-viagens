@@ -63,19 +63,44 @@ language sql stable security definer set search_path = public as $$
   select coalesce(public.cv_papel() = 'admin', false)
 $$;
 
--- técnico não pode alterar dono nem o acerto financeiro
+-- Banco do técnico: sobra deixada no banco (acerto.tipo = 'banco') menos o que já foi
+-- usado como adiantamento em viagens (adiantamento.banco). Só o próprio técnico e o financeiro enxergam.
+create or replace function public.cv_banco(p_tec uuid) returns numeric
+language sql stable security definer set search_path = public as $$
+  select case when auth.uid() = p_tec or public.cv_is_fin() then
+    coalesce(sum(case when acerto->>'tipo' = 'banco' then (acerto->>'valor')::numeric else 0 end), 0)
+    - coalesce(sum(coalesce((adiantamento->>'banco')::numeric, 0)), 0)
+  else 0 end
+  from public.cv_viagens where tecnico_id = p_tec
+$$;
+
+-- técnico não pode alterar dono, acerto financeiro nem o crédito do banco
 create or replace function public.cv_guard_viagem() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.cv_is_fin() then
     new.tecnico_id := old.tecnico_id;
     new.acerto := old.acerto;
+    new.adiantamento := jsonb_set(coalesce(new.adiantamento, '{}'::jsonb), '{banco}',
+                                  coalesce(old.adiantamento->'banco', '0'::jsonb));
   end if;
   return new;
 end $$;
 drop trigger if exists cv_guard_viagem on public.cv_viagens;
 create trigger cv_guard_viagem before update on public.cv_viagens
   for each row execute function public.cv_guard_viagem();
+
+-- ao criar a viagem, o servidor soma o saldo do banco ao adiantamento (ignora o valor enviado)
+create or replace function public.cv_viagem_banco() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.adiantamento := jsonb_set(coalesce(new.adiantamento, '{}'::jsonb), '{banco}',
+                                to_jsonb(greatest(0, public.cv_banco(new.tecnico_id))));
+  return new;
+end $$;
+drop trigger if exists cv_viagem_banco on public.cv_viagens;
+create trigger cv_viagem_banco before insert on public.cv_viagens
+  for each row execute function public.cv_viagem_banco();
 
 -- ---------- RLS ----------
 alter table public.cv_perfis    enable row level security;
@@ -110,16 +135,24 @@ create policy cv_viagens_upd_fin on public.cv_viagens for update to authenticate
   using (public.cv_is_fin() and status <> 'encerrada') with check (public.cv_is_fin());
 create policy cv_viagens_del on public.cv_viagens for delete to authenticated
   using (public.cv_papel() is not null and
-         ((tecnico_id = auth.uid() and status = 'em_viagem') or (public.cv_is_fin() and status <> 'encerrada')));
+         ((tecnico_id = auth.uid() and status = 'em_viagem') or public.cv_is_fin()));
 
 drop policy if exists cv_despesas_sel on public.cv_despesas;
 drop policy if exists cv_despesas_ins on public.cv_despesas;
+drop policy if exists cv_despesas_upd on public.cv_despesas;
 drop policy if exists cv_despesas_del on public.cv_despesas;
 create policy cv_despesas_sel on public.cv_despesas for select to authenticated
   using (exists (select 1 from public.cv_viagens v where v.id = viagem_id));
 create policy cv_despesas_ins on public.cv_despesas for insert to authenticated
   with check (exists (select 1 from public.cv_viagens v where v.id = viagem_id
               and v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao')));
+create policy cv_despesas_upd on public.cv_despesas for update to authenticated
+  using (exists (select 1 from public.cv_viagens v where v.id = viagem_id
+        and ((v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao'))
+             or (public.cv_is_fin() and v.status <> 'encerrada'))))
+  with check (exists (select 1 from public.cv_viagens v where v.id = viagem_id
+        and ((v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao'))
+             or (public.cv_is_fin() and v.status <> 'encerrada'))));
 create policy cv_despesas_del on public.cv_despesas for delete to authenticated
   using (exists (select 1 from public.cv_viagens v where v.id = viagem_id
         and v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao')));
@@ -146,7 +179,8 @@ create policy cv_files_sel on storage.objects for select to authenticated
 create policy cv_files_ins on storage.objects for insert to authenticated
   with check (bucket_id = 'cv-comprovantes' and exists (
     select 1 from public.cv_viagens v where v.id::text = (storage.foldername(name))[1]
-      and v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao')));
+      and ((v.tecnico_id = auth.uid() and v.status in ('em_viagem','correcao'))
+           or (public.cv_is_fin() and v.status <> 'encerrada'))));
 create policy cv_files_del on storage.objects for delete to authenticated
   using (bucket_id = 'cv-comprovantes' and exists (
     select 1 from public.cv_viagens v where v.id::text = (storage.foldername(name))[1]

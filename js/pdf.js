@@ -120,7 +120,8 @@
 
       h2('Por categoria');
       table([{ l: 'CATEGORIA', w: CW - 3 * 85 }, { l: 'ADIANTADO', w: 85, r: true }, { l: 'GASTO', w: 85, r: true }, { l: 'DIFERENÇA', w: 85, r: true }],
-        CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => [n, brl(x.adiant[k]), brl(x.gasto[k]), brl(x.adiant[k] - x.gasto[k])]));
+        CATS.filter(([k]) => x.adiant[k] || x.gasto[k]).map(([k, n]) => [n, brl(x.adiant[k]), brl(x.gasto[k]), brl(x.adiant[k] - x.gasto[k])])
+          .concat(x.banco ? [['banco (sobra anterior)', brl(x.banco), brl(0), brl(x.banco)]] : []));
 
       h2('Despesas declaradas');
       table(colsDesp, t.despesas.map((d, i) => [String(i + 1), dt(d.data), catName(d.categoria), d.obs || '-', brl(d.valor), d.arquivoId ? 'Anexo ' + (i + 1) : 'sem nota']),
@@ -128,7 +129,7 @@
 
       h2('Assinatura e acerto');
       kv('Assinado por', t.assinatura ? `${t.assinatura.nome} em ${dtt(t.assinatura.em)} (assinatura eletrônica)` : 'não assinada');
-      if (t.acerto) kv('Acerto', `${t.acerto.tipo === 'reembolso' ? 'Reembolso pago' : 'Devolução recebida'}: ${brl(t.acerto.valor)} em ${dtt(t.acerto.em)}${t.acerto.por ? ' (' + t.acerto.por + ')' : ''}`);
+      if (t.acerto) kv('Acerto', `${{ reembolso: 'Reembolso pago', banco: 'Sobra mantida no banco do técnico' }[t.acerto.tipo] || 'Devolução recebida'}: ${brl(t.acerto.valor)} em ${dtt(t.acerto.em)}${t.acerto.por ? ' (' + t.acerto.por + ')' : ''}`);
       h2('Histórico');
       (t.historico || []).forEach((h) => {
         const ls = wrap(`${dtt(h.em)} · ${h.por}: ${h.texto}`, CW, F, 8.5);

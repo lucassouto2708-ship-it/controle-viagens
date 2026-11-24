@@ -91,7 +91,7 @@
         fail(error);
       }
       // despesas: insere as novas, remove as que saíram
-      const { data: cur, error: e1 } = await sb.from('cv_despesas').select('id').eq('viagem_id', t.id);
+      const { data: cur, error: e1 } = await sb.from('cv_despesas').select('*').eq('viagem_id', t.id);
       fail(e1);
       const have = new Set(cur.map((d) => d.id));
       const want = new Set(t.despesas.map((d) => d.id));
@@ -100,6 +100,15 @@
         obs: d.obs || '', arquivo_path: d.arquivoId || null, arquivo_nome: d.arquivoNome || null,
       }));
       if (novas.length) { const { error } = await sb.from('cv_despesas').insert(novas); fail(error); }
+      // despesas editadas: atualiza só as que mudaram
+      for (const d of t.despesas.filter((x) => have.has(x.id))) {
+        const o = cur.find((c) => c.id === d.id);
+        const novo = { data: d.data, categoria: d.categoria, valor: d.valor, obs: d.obs || '', arquivo_path: d.arquivoId || null, arquivo_nome: d.arquivoNome || null };
+        if (Object.keys(novo).every((k) => (k === 'valor' ? Number(o[k]) === Number(novo[k]) : o[k] === novo[k]))) continue;
+        const { data: up, error } = await sb.from('cv_despesas').update(novo).eq('id', d.id).select('id');
+        fail(error);
+        if (!up.length) throw new Error('Sem permissão para editar esta despesa neste status.');
+      }
       const fora = [...have].filter((id) => !want.has(id));
       if (fora.length) { const { error } = await sb.from('cv_despesas').delete().in('id', fora); fail(error); }
       // histórico: só entradas novas (sem id)
@@ -112,8 +121,9 @@
       const { data } = await sb.from('cv_despesas').select('arquivo_path').eq('viagem_id', id);
       const paths = (data || []).map((d) => d.arquivo_path).filter(Boolean);
       if (paths.length) await sb.storage.from(BUCKET).remove(paths);
-      const { error } = await sb.from('cv_viagens').delete().eq('id', id);
+      const { data: del, error } = await sb.from('cv_viagens').delete().eq('id', id).select('id');
       fail(error);
+      if (!del.length) throw new Error('Sem permissão para excluir esta viagem.');
     },
 
     // devolve o caminho no bucket (guardado em despesa.arquivoId)
